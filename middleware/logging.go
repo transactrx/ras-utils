@@ -64,7 +64,12 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.wroteHeader = true
 }
 
-func LoggingMiddleware(l *slog.Logger) func(next http.Handler) http.Handler {
+func LoggingMiddleware(l *slog.Logger, skipPaths ...string) func(next http.Handler) http.Handler {
+	skipSet := make(map[string]struct{}, len(skipPaths))
+	for _, p := range skipPaths {
+		skipSet[p] = struct{}{}
+	}
+
 	return func(next http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
@@ -82,7 +87,7 @@ func LoggingMiddleware(l *slog.Logger) func(next http.Handler) http.Handler {
 			next.ServeHTTP(wrapped, r)
 			path := r.URL.EscapedPath()
 
-			if path != "/isAvailable" {
+			if _, skip := skipSet[path]; !skip {
 				l.Debug("http request",
 					"status", wrapped.status,
 					"method", r.Method,

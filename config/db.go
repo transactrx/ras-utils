@@ -60,3 +60,45 @@ func InitDbPool(ctx context.Context, cfg *DBConfig) (*pgxpool.Pool, error) {
 
 	return pool, nil
 }
+
+func InitReadOnlyDbPool(ctx context.Context, cfg *DBConfig) (*pgxpool.Pool, error) {
+	if cfg.ReadOnlyHost == "" {
+		return nil, fmt.Errorf("ReadOnlyHost is not configured")
+	}
+
+	slog.Debug("Config stuff (read-only)", "debug config", cfg)
+
+	connString := fmt.Sprintf(
+		"host=%s port=%s dbname=%s user=%s password=%s sslmode=disable",
+		cfg.ReadOnlyHost,
+		cfg.Port,
+		cfg.DatabaseName,
+		cfg.User,
+		cfg.Password,
+	)
+
+	poolConfig, err := pgxpool.ParseConfig(connString)
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse connection string: %w", err)
+	}
+
+	poolConfig.MaxConns = int32(cfg.MaxConnections)
+	poolConfig.MinConns = int32(cfg.MinConnections)
+	poolConfig.MaxConnLifetime = cfg.MaxConnectionLifetime
+	poolConfig.MaxConnIdleTime = cfg.MaxConnectionIdleTime
+	poolConfig.HealthCheckPeriod = cfg.ConnectionTimeout
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create read-only connection pool: %w", err)
+	}
+
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("unable to ping read-only database: %w", err)
+	}
+
+	slog.Info("read-only database connection pool established", "host", cfg.ReadOnlyHost, "database", cfg.DatabaseName)
+
+	return pool, nil
+}

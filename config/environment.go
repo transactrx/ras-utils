@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func getEnvironmentVariableOrDefault(key string, defaultValue string) string {
+func GetEnvironmentVariableOrDefault(key string, defaultValue string) string {
 	valueStr := os.Getenv(key)
 	if valueStr == "" {
 		return defaultValue
@@ -15,7 +15,7 @@ func getEnvironmentVariableOrDefault(key string, defaultValue string) string {
 	return valueStr
 }
 
-func getEnvironmentVariableOrPanic(key string, panicMessage string) string {
+func GetEnvironmentVariableOrPanic(key string, panicMessage string) string {
 	value := os.Getenv(key)
 	if value == "" {
 		slog.Error("environment variable key is missing", "key missing", key)
@@ -24,7 +24,7 @@ func getEnvironmentVariableOrPanic(key string, panicMessage string) string {
 	return value
 }
 
-func getEnvironmentVariableOrDefaultInt(key string, defaultValue int) int {
+func GetEnvironmentVariableOrDefaultInt(key string, defaultValue int) int {
 	valueStr := os.Getenv(key)
 	if valueStr == "" {
 		return defaultValue
@@ -37,7 +37,7 @@ func getEnvironmentVariableOrDefaultInt(key string, defaultValue int) int {
 	return valueInt
 }
 
-func getEnvironmentVariableOrDefaultDuration(key string, defaultValue string) time.Duration {
+func GetEnvironmentVariableOrDefaultDuration(key string, defaultValue string) time.Duration {
 	valueStr := os.Getenv(key)
 	if valueStr == "" {
 		duration, _ := time.ParseDuration(defaultValue)

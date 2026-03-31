@@ -65,11 +65,67 @@ func ConvertToPgtypeTimestamp(t *time.Time) pgtype.Timestamp {
 	if t != nil {
 		err := pgTime.Scan(*t)
 		if err != nil {
-			slog.Error("failed to convert to pgtype.Bool", "error", err, "bool", t)
-			pgTime = pgtype.Timestamp{Time: *t}
+			slog.Error("failed to convert to pgtype.Timestamp", "error", err, "time", t)
+			pgTime = pgtype.Timestamp{Valid: false}
 		}
 	} else {
-		pgTime = pgtype.Timestamp{Time: *t}
+		pgTime = pgtype.Timestamp{Valid: false}
 	}
 	return pgTime
+}
+
+// Error-returning variants for callers that need explicit error handling
+
+func TryConvertToPgtypeString(s *string) (pgtype.Text, error) {
+	if s == nil {
+		return pgtype.Text{Valid: false}, nil
+	}
+	var pgString pgtype.Text
+	if err := pgString.Scan(*s); err != nil {
+		return pgtype.Text{Valid: false}, err
+	}
+	return pgString, nil
+}
+
+func TryConvertToPgtypeInt8(i *int64) (pgtype.Int8, error) {
+	if i == nil {
+		return pgtype.Int8{Valid: false}, nil
+	}
+	var pgInt8 pgtype.Int8
+	if err := pgInt8.Scan(*i); err != nil {
+		return pgtype.Int8{Valid: false}, err
+	}
+	return pgInt8, nil
+}
+
+func TryConvertToPgtypeInt2(i *int32) (pgtype.Int2, error) {
+	if i == nil {
+		return pgtype.Int2{Valid: false}, nil
+	}
+	return pgtype.Int2{
+		Int16: int16(*i),
+		Valid: true,
+	}, nil
+}
+
+func TryConvertToPgtypeBool(b *bool) (pgtype.Bool, error) {
+	if b == nil {
+		return pgtype.Bool{Valid: false}, nil
+	}
+	var pgBool pgtype.Bool
+	if err := pgBool.Scan(*b); err != nil {
+		return pgtype.Bool{Valid: false}, err
+	}
+	return pgBool, nil
+}
+
+func TryConvertToPgtypeTimestamp(t *time.Time) (pgtype.Timestamp, error) {
+	if t == nil {
+		return pgtype.Timestamp{Valid: false}, nil
+	}
+	var pgTime pgtype.Timestamp
+	if err := pgTime.Scan(*t); err != nil {
+		return pgtype.Timestamp{Valid: false}, err
+	}
+	return pgTime, nil
 }
