@@ -17,8 +17,12 @@ Generic in-memory key-value cache with TTL expiration and thread-safe operations
 ```go
 import "github.com/transactrx/ras-utils/cache"
 
-// Create a cache
+// Create a cache (expired items removed on access)
 c := cache.NewCache[string, User]()
+
+// Create a cache with background cleanup (removes expired items periodically)
+c := cache.NewCacheWithCleanup[string, User](5 * time.Minute)
+defer c.Stop() // stop the cleanup goroutine when done
 
 // Set with TTL
 c.Set("user:123", user, 5*time.Minute)

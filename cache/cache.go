@@ -20,8 +20,9 @@ func NewCacheItem[T any](value T, expiry time.Time) CacheItem[T] {
 
 // Cache represents an in-memory key-value store with expiry support.
 type Cache[K comparable, T any] struct {
-	data map[K]CacheItem[T] // stores cache items
-	mu   sync.RWMutex       // managing concurrent access
+	data   map[K]CacheItem[T] // stores cache items
+	mu     sync.RWMutex       // managing concurrent access
+	stopCh chan struct{}      // signal to stop background cleanup
 }
 
 // function interface for returning a value that should be cached. Implementations would read from db to retrieve value
@@ -32,6 +33,51 @@ func NewCache[K comparable, T any]() *Cache[K, T] {
 	return &Cache[K, T]{
 		data: make(map[K]CacheItem[T]),
 	}
+}
+
+// Stop terminates the background cleanup goroutine.
+// Safe to call on caches created with NewCache (no-op).
+func (c *Cache[K, T]) Stop() {
+	if c.stopCh != nil {
+		close(c.stopCh)
+	}
+}
+
+// startCleanup runs the background cleanup loop.
+func (c *Cache[K, T]) startCleanup(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			c.deleteExpired()
+		case <-c.stopCh:
+			return
+		}
+	}
+}
+
+// deleteExpired removes all expired items from the cache.
+func (c *Cache[K, T]) deleteExpired() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := time.Now()
+	for key, item := range c.data {
+		if item.expiry.Before(now) {
+			delete(c.data, key)
+		}
+	}
+}
+
+// NewCacheWithCleanup creates a Cache with a background goroutine that
+// periodically removes expired items. Call Stop() to terminate the goroutine.
+func NewCacheWithCleanup[K comparable, T any](cleanupInterval time.Duration) *Cache[K, T] {
+	c := &Cache[K, T]{
+		data:   make(map[K]CacheItem[T]),
+		stopCh: make(chan struct{}),
+	}
+	go c.startCleanup(cleanupInterval)
+	return c
 }
 
 // Set adds or updates a key-value pair in the cache with the given TTL.
@@ -83,14 +129,15 @@ func (c *Cache[K, T]) Clear() {
 
 // Tries to get cached value, if not found, then runs storeCacheOperation function to get value that should be cached.
 func (c *Cache[K, T]) TryGet(key K, storeOperation StoreCacheOperation[T]) (T, bool) {
-	cachedValue, isCached := c.Get(key)
-	if !isCached {
-		newValue, successful := storeOperation()
-		if !successful {
-			return zeroVal[T](), false
-		}
+
+	if cachedValue, isCached := c.Get(key); isCached {
+		return cachedValue, true
+	}
+
+	if newValue, successful := storeOperation(); successful {
 		c.Set(key, newValue.value, newValue.expiry.Sub(time.Now()))
 		return newValue.value, true
 	}
-	return cachedValue, true
+
+	return zeroVal[T](), false
 }
