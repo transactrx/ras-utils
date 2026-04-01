@@ -1,4 +1,4 @@
-package middleware
+package rasstack
 
 import (
 	"net/http"

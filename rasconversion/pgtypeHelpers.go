@@ -1,4 +1,4 @@
-package conversion
+package rasconversion
 
 import (
 	"log/slog"
