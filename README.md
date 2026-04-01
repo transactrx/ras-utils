@@ -10,18 +10,18 @@ go get github.com/transactrx/ras-utils
 
 ## Packages
 
-### cache
+### rascache
 
 Generic in-memory key-value cache with TTL expiration and thread-safe operations.
 
 ```go
-import "github.com/transactrx/ras-utils/cache"
+import "github.com/transactrx/ras-utils/rascache"
 
 // Create a cache (expired items removed on access)
-c := cache.NewCache[string, User]()
+c := rascache.NewCache[string, User]()
 
 // Create a cache with background cleanup (removes expired items periodically)
-c := cache.NewCacheWithCleanup[string, User](5 * time.Minute)
+c := rascache.NewCacheWithCleanup[string, User](5 * time.Minute)
 defer c.Stop() // stop the cleanup goroutine when done
 
 // Set with TTL
@@ -31,12 +31,12 @@ c.Set("user:123", user, 5*time.Minute)
 user, ok := c.Get("user:123")
 
 // Cache-through pattern: fetch from source if not cached
-user, ok := c.TryGet("user:123", func() (cache.CacheItem[User], bool) {
+user, ok := c.TryGet("user:123", func() (rascache.CacheItem[User], bool) {
     user, err := db.GetUser(123)
     if err != nil {
-        return cache.CacheItem[User]{}, false
+        return rascache.CacheItem[User]{}, false
     }
-    return cache.NewCacheItem(user, time.Now().Add(5*time.Minute)), true
+    return rascache.NewCacheItem(user, time.Now().Add(5*time.Minute)), true
 })
 
 // Delete and Clear
@@ -44,23 +44,23 @@ c.Delete("user:123")
 c.Clear()
 ```
 
-### config
+### rasconfig
 
 Database configuration and environment variable helpers.
 
 ```go
-import "github.com/transactrx/ras-utils/config"
+import "github.com/transactrx/ras-utils/rasconfig"
 
 // Environment variables with defaults
-host := config.GetEnvironmentVariableOrDefault("DB_HOST", "localhost")
-port := config.GetEnvironmentVariableOrDefaultInt("DB_PORT", 5432)
-timeout := config.GetEnvironmentVariableOrDefaultDuration("DB_TIMEOUT", "30s")
+host := rasconfig.GetEnvironmentVariableOrDefault("DB_HOST", "localhost")
+port := rasconfig.GetEnvironmentVariableOrDefaultInt("DB_PORT", 5432)
+timeout := rasconfig.GetEnvironmentVariableOrDefaultDuration("DB_TIMEOUT", "30s")
 
 // Required environment variables (panics if missing)
-apiKey := config.GetEnvironmentVariableOrPanic("API_KEY", "API_KEY is required")
+apiKey := rasconfig.GetEnvironmentVariableOrPanic("API_KEY", "API_KEY is required")
 
 // Database connection pool
-cfg := &config.DBConfig{
+cfg := &rasconfig.DBConfig{
     Host:                  "localhost",
     ReadOnlyHost:          "readonly.localhost",
     Port:                  "5432",
@@ -74,49 +74,57 @@ cfg := &config.DBConfig{
     ConnectionTimeout:     5 * time.Second,
 }
 
-pool, err := config.InitDbPool(ctx, cfg)
-readOnlyPool, err := config.InitReadOnlyDbPool(ctx, cfg)
+pool, err := rasconfig.InitDbPool(ctx, cfg)
+readOnlyPool, err := rasconfig.InitReadOnlyDbPool(ctx, cfg)
 ```
 
-### conversion
+### rasconversion
 
 Type conversion helpers for PostgreSQL (pgx/pgtype). Converts nullable Go types to pgtype equivalents with proper null handling.
 
 ```go
-import "github.com/transactrx/ras-utils/conversion"
+import "github.com/transactrx/ras-utils/rasconversion"
 
 // Convert nullable Go types to pgtype (logs errors, returns invalid on failure)
-pgText := conversion.ConvertToPgtypeString(stringPtr)
-pgInt8 := conversion.ConvertToPgtypeInt8(int64Ptr)
-pgInt2 := conversion.ConvertToPgtypeInt2(int32Ptr)
-pgBool := conversion.ConvertToPgtypeBool(boolPtr)
-pgTime := conversion.ConvertToPgtypeTimestamp(timePtr)
+pgText := rasconversion.ConvertToPgtypeString(stringPtr)
+pgInt8 := rasconversion.ConvertToPgtypeInt8(int64Ptr)
+pgInt2 := rasconversion.ConvertToPgtypeInt2(int32Ptr)
+pgBool := rasconversion.ConvertToPgtypeBool(boolPtr)
+pgTime := rasconversion.ConvertToPgtypeTimestamp(timePtr)
 
 // Error-returning variants for explicit error handling
-pgText, err := conversion.TryConvertToPgtypeString(stringPtr)
-pgInt8, err := conversion.TryConvertToPgtypeInt8(int64Ptr)
-pgInt2, err := conversion.TryConvertToPgtypeInt2(int32Ptr)
-pgBool, err := conversion.TryConvertToPgtypeBool(boolPtr)
-pgTime, err := conversion.TryConvertToPgtypeTimestamp(timePtr)
+pgText, err := rasconversion.TryConvertToPgtypeString(stringPtr)
+pgInt8, err := rasconversion.TryConvertToPgtypeInt8(int64Ptr)
+pgInt2, err := rasconversion.TryConvertToPgtypeInt2(int32Ptr)
+pgBool, err := rasconversion.TryConvertToPgtypeBool(boolPtr)
+pgTime, err := rasconversion.TryConvertToPgtypeTimestamp(timePtr)
 ```
 
-### middleware
+### raslogging
 
-HTTP middleware utilities for logging and middleware composition.
+HTTP request logging middleware with panic recovery and structured JSON logging.
 
 ```go
-import "github.com/transactrx/ras-utils/middleware"
+import "github.com/transactrx/ras-utils/raslogging"
 
 // Set up structured JSON logger (reads LOG_LEVEL env var)
-middleware.SetUpLogger()
+raslogging.SetUpLogger()
 
 // Logging middleware with panic recovery
 logger := slog.Default()
-loggingMw := middleware.LoggingMiddleware(logger, "/health", "/ready") // skip paths optional
+loggingMw := raslogging.LoggingMiddleware(logger, "/health", "/ready") // skip paths optional
+```
+
+### rasstack
+
+Middleware composition utility for chaining HTTP middleware.
+
+```go
+import "github.com/transactrx/ras-utils/rasstack"
 
 // Compose multiple middleware
-stack := middleware.CreateStack(
-    middleware.LoggingMiddleware(logger),
+stack := rasstack.CreateStack(
+    raslogging.LoggingMiddleware(logger),
     authMiddleware,
     rateLimitMiddleware,
 )
