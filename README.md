@@ -115,6 +115,48 @@ logger := slog.Default()
 loggingMw := raslogging.LoggingMiddleware(logger, "/health", "/ready") // skip paths optional
 ```
 
+### rasevents
+
+Event publishing via NATS with sync/async support, worker pools, and context cancellation.
+
+```go
+import "github.com/transactrx/ras-utils/rasevents"
+
+// Optional: Initialize with custom config (otherwise uses defaults + env vars)
+rasevents.Init(&rasevents.Config{
+    DefaultNamespace: "MyService",
+    Subject:          "trx.eventscollector.collect",
+    Timeout:          30 * time.Second,
+    WorkerPoolSize:   20,
+    EventQueueSize:   500,
+})
+
+// Send event synchronously (returns error)
+err := rasevents.SendEvent("PatientNotification", "Email", payload)
+
+// Send with context for cancellation/timeout
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+err := rasevents.SendEventWithContext(ctx, "PatientNotification", "SMS", payload)
+
+// Send asynchronously (fire-and-forget, returns true if queued)
+queued := rasevents.SendEventAsync("PatientNotification", "Email", payload)
+
+// For testing: inject a mock client
+rasevents.SetNatsClient(mockClient)
+defer rasevents.ResetNatsClient()
+
+// Graceful shutdown
+defer rasevents.StopEventWorkerPool()
+```
+
+**Environment variables:**
+- `EVENTS_DEFAULT_NAMESPACE` - Default namespace (default: "PatientNotification")
+- `EVENTS_SUBJECT` - Base NATS subject (default: "trx.eventscollector.collect")
+- `EVENTS_TIMEOUT_SECONDS` - Request timeout in seconds (default: 60)
+- `EVENTS_WORKER_POOL_SIZE` - Async worker count (default: 50)
+- `EVENTS_QUEUE_SIZE` - Async queue size (default: 1000)
+
 ### rasstack
 
 Middleware composition utility for chaining HTTP middleware.
