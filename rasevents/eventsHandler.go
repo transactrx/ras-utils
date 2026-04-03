@@ -59,10 +59,11 @@ type Hooks struct {
 }
 
 // DefaultConfig returns a Config with default values, reading from environment variables if set.
+// DefaultNamespace and Subject Required
 func DefaultConfig() Config {
 	cfg := Config{
-		DefaultNamespace: "PatientNotification",
-		Subject:          "trx.eventscollector.collect",
+		DefaultNamespace: "", // required
+		Subject:          "", //required
 		Timeout:          60 * time.Second,
 		WorkerPoolSize:   50,
 		EventQueueSize:   1000,
@@ -115,13 +116,13 @@ type EventsHandler struct {
 	client    NatsClient
 	clientErr error
 
-	poolOnce      sync.Once
-	eventQueue    chan eventWork
-	poolStopCh    chan struct{}
-	poolWg        sync.WaitGroup
-	shutdownOnce  sync.Once
-	shutdownMu    sync.RWMutex
-	shuttingDown  bool
+	poolOnce     sync.Once
+	eventQueue   chan eventWork
+	poolStopCh   chan struct{}
+	poolWg       sync.WaitGroup
+	shutdownOnce sync.Once
+	shutdownMu   sync.RWMutex
+	shuttingDown bool
 }
 
 type eventWork struct {

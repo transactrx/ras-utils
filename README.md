@@ -125,7 +125,7 @@ import "github.com/transactrx/ras-utils/rasevents"
 // Option 1: Use global functions with package-level handler
 rasevents.Init(&rasevents.Config{
     DefaultNamespace: "MyService",
-    Subject:          "trx.eventscollector.collect",
+    Subject:          "custom.events.subject",
     Timeout:          30 * time.Second,
     WorkerPoolSize:   20,
     EventQueueSize:   500,
