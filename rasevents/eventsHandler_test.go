@@ -55,10 +55,7 @@ func (m *MockNatsClient) ResetCallCount() {
 
 // resetTestState resets global state between tests.
 func resetTestState() {
-	ResetNatsClient()
-	// Reset config by creating a new one
-	configOnce = sync.Once{}
-	poolOnce = sync.Once{}
+	ResetDefaultHandler()
 }
 
 // TestCreateEvent_ValidPayload tests creating an event with valid payload
@@ -809,5 +806,531 @@ func TestEventStruct_JSONTags(t *testing.T) {
 
 	if jsonMap["eventPayload"] != "test-payload" {
 		t.Errorf("Expected eventPayload field in JSON, got: %v", jsonMap)
+	}
+}
+
+// --- New tests for EventsHandler struct ---
+
+// TestNewEventsHandler tests creating a new EventsHandler
+func TestNewEventsHandler(t *testing.T) {
+	cfg := Config{
+		DefaultNamespace: "TestNamespace",
+		Subject:          "test.subject",
+		Timeout:          30 * time.Second,
+		WorkerPoolSize:   5,
+		EventQueueSize:   10,
+	}
+
+	mockClient := &MockNatsClient{}
+	handler := NewEventsHandler(cfg, mockClient)
+
+	if handler == nil {
+		t.Fatal("Expected non-nil handler")
+	}
+
+	gotCfg := handler.GetConfig()
+	if gotCfg.DefaultNamespace != "TestNamespace" {
+		t.Errorf("Expected DefaultNamespace 'TestNamespace', got: '%s'", gotCfg.DefaultNamespace)
+	}
+
+	client, err := handler.GetClient()
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+	if client != mockClient {
+		t.Error("Expected to get the mock client back")
+	}
+}
+
+// TestEventsHandler_SendEvent tests sending events via handler instance
+func TestEventsHandler_SendEvent(t *testing.T) {
+	mockClient := &MockNatsClient{
+		DoRequestFunc: func(correlationId, subject string, headers nats_service_client.Header, data []byte, timeout time.Duration) (*nats_service_client.NatsResponseMessage, *nats_service.NatsServiceError, error) {
+			return &nats_service_client.NatsResponseMessage{Data: []byte("success")}, nil, nil
+		},
+	}
+
+	cfg := Config{
+		DefaultNamespace: "HandlerNamespace",
+		Subject:          "handler.subject",
+		Timeout:          10 * time.Second,
+		WorkerPoolSize:   2,
+		EventQueueSize:   10,
+	}
+
+	handler := NewEventsHandler(cfg, mockClient)
+	err := handler.SendEvent("TestNS", "TestType", map[string]string{"key": "value"})
+
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+
+	expectedSubject := "handler.subject.TestNS.TestType"
+	if mockClient.LastSubject != expectedSubject {
+		t.Errorf("Expected subject '%s', got: '%s'", expectedSubject, mockClient.LastSubject)
+	}
+}
+
+// TestEventsHandler_SendEventAsync tests async sending via handler instance
+func TestEventsHandler_SendEventAsync(t *testing.T) {
+	var callCount int64
+	mockClient := &MockNatsClient{
+		DoRequestFunc: func(correlationId, subject string, headers nats_service_client.Header, data []byte, timeout time.Duration) (*nats_service_client.NatsResponseMessage, *nats_service.NatsServiceError, error) {
+			atomic.AddInt64(&callCount, 1)
+			return &nats_service_client.NatsResponseMessage{Data: []byte("success")}, nil, nil
+		},
+	}
+
+	cfg := Config{
+		DefaultNamespace: "AsyncNS",
+		Subject:          "async.subject",
+		Timeout:          10 * time.Second,
+		WorkerPoolSize:   2,
+		EventQueueSize:   10,
+	}
+
+	handler := NewEventsHandler(cfg, mockClient)
+	queued := handler.SendEventAsync("TestNS", "TestType", map[string]string{"key": "value"})
+
+	if !queued {
+		t.Error("Expected event to be queued")
+	}
+
+	// Wait for processing
+	time.Sleep(100 * time.Millisecond)
+
+	if atomic.LoadInt64(&callCount) != 1 {
+		t.Errorf("Expected 1 call, got: %d", atomic.LoadInt64(&callCount))
+	}
+
+	// Cleanup
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_ = handler.Shutdown(ctx)
+}
+
+// TestEventsHandler_Shutdown_DrainsQueue tests that Shutdown drains the queue
+func TestEventsHandler_Shutdown_DrainsQueue(t *testing.T) {
+	var callCount int64
+	var processedMu sync.Mutex
+	var processed []string
+
+	mockClient := &MockNatsClient{
+		DoRequestFunc: func(correlationId, subject string, headers nats_service_client.Header, data []byte, timeout time.Duration) (*nats_service_client.NatsResponseMessage, *nats_service.NatsServiceError, error) {
+			atomic.AddInt64(&callCount, 1)
+			// Simulate some work
+			time.Sleep(10 * time.Millisecond)
+			processedMu.Lock()
+			processed = append(processed, subject)
+			processedMu.Unlock()
+			return &nats_service_client.NatsResponseMessage{Data: []byte("success")}, nil, nil
+		},
+	}
+
+	cfg := Config{
+		DefaultNamespace: "DrainNS",
+		Subject:          "drain.subject",
+		Timeout:          10 * time.Second,
+		WorkerPoolSize:   2,
+		EventQueueSize:   100,
+	}
+
+	handler := NewEventsHandler(cfg, mockClient)
+
+	// Queue several events
+	numEvents := 10
+	for i := 0; i < numEvents; i++ {
+		queued := handler.SendEventAsync("TestNS", fmt.Sprintf("Type%d", i), map[string]string{"key": "value"})
+		if !queued {
+			t.Errorf("Expected event %d to be queued", i)
+		}
+	}
+
+	// Shutdown with enough time to drain
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := handler.Shutdown(ctx)
+	if err != nil {
+		t.Errorf("Expected no error from Shutdown, got: %v", err)
+	}
+
+	// All events should have been processed
+	if atomic.LoadInt64(&callCount) != int64(numEvents) {
+		t.Errorf("Expected %d events processed, got: %d", numEvents, atomic.LoadInt64(&callCount))
+	}
+}
+
+// TestEventsHandler_Shutdown_RejectsNewEvents tests that Shutdown rejects new events
+func TestEventsHandler_Shutdown_RejectsNewEvents(t *testing.T) {
+	mockClient := &MockNatsClient{
+		DoRequestFunc: func(correlationId, subject string, headers nats_service_client.Header, data []byte, timeout time.Duration) (*nats_service_client.NatsResponseMessage, *nats_service.NatsServiceError, error) {
+			time.Sleep(50 * time.Millisecond) // Slow processing
+			return &nats_service_client.NatsResponseMessage{Data: []byte("success")}, nil, nil
+		},
+	}
+
+	cfg := Config{
+		DefaultNamespace: "RejectNS",
+		Subject:          "reject.subject",
+		Timeout:          10 * time.Second,
+		WorkerPoolSize:   1,
+		EventQueueSize:   10,
+	}
+
+	handler := NewEventsHandler(cfg, mockClient)
+
+	// Queue one event to initialize the pool
+	handler.SendEventAsync("TestNS", "TestType", map[string]string{"key": "value"})
+
+	// Start shutdown in background
+	shutdownDone := make(chan struct{})
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = handler.Shutdown(ctx)
+		close(shutdownDone)
+	}()
+
+	// Give shutdown time to set shuttingDown flag
+	time.Sleep(10 * time.Millisecond)
+
+	// Try to queue another event - should be rejected
+	queued := handler.SendEventAsync("TestNS", "TestType2", map[string]string{"key": "value"})
+	if queued {
+		t.Error("Expected event to be rejected after Shutdown called")
+	}
+
+	<-shutdownDone
+}
+
+// TestEventsHandler_Shutdown_ContextTimeout tests Shutdown with context timeout
+func TestEventsHandler_Shutdown_ContextTimeout(t *testing.T) {
+	mockClient := &MockNatsClient{
+		DoRequestFunc: func(correlationId, subject string, headers nats_service_client.Header, data []byte, timeout time.Duration) (*nats_service_client.NatsResponseMessage, *nats_service.NatsServiceError, error) {
+			time.Sleep(500 * time.Millisecond) // Very slow processing
+			return &nats_service_client.NatsResponseMessage{Data: []byte("success")}, nil, nil
+		},
+	}
+
+	cfg := Config{
+		DefaultNamespace: "TimeoutNS",
+		Subject:          "timeout.subject",
+		Timeout:          10 * time.Second,
+		WorkerPoolSize:   1,
+		EventQueueSize:   100,
+	}
+
+	handler := NewEventsHandler(cfg, mockClient)
+
+	// Queue many events
+	for i := 0; i < 20; i++ {
+		handler.SendEventAsync("TestNS", fmt.Sprintf("Type%d", i), map[string]string{"key": "value"})
+	}
+
+	// Shutdown with very short timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	err := handler.Shutdown(ctx)
+	if err == nil {
+		t.Error("Expected context deadline exceeded error")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Expected context.DeadlineExceeded, got: %v", err)
+	}
+}
+
+// --- Tests for Hooks ---
+
+// TestHooks_OnEventSent tests the OnEventSent hook
+func TestHooks_OnEventSent(t *testing.T) {
+	var hookCalled bool
+	var hookNamespace, hookEventType string
+	var hookDuration time.Duration
+	var hookErr error
+
+	mockClient := &MockNatsClient{
+		DoRequestFunc: func(correlationId, subject string, headers nats_service_client.Header, data []byte, timeout time.Duration) (*nats_service_client.NatsResponseMessage, *nats_service.NatsServiceError, error) {
+			time.Sleep(10 * time.Millisecond)
+			return &nats_service_client.NatsResponseMessage{Data: []byte("success")}, nil, nil
+		},
+	}
+
+	cfg := Config{
+		DefaultNamespace: "HookNS",
+		Subject:          "hook.subject",
+		Timeout:          10 * time.Second,
+		WorkerPoolSize:   2,
+		EventQueueSize:   10,
+		Hooks: &Hooks{
+			OnEventSent: func(namespace, eventType string, duration time.Duration, err error) {
+				hookCalled = true
+				hookNamespace = namespace
+				hookEventType = eventType
+				hookDuration = duration
+				hookErr = err
+			},
+		},
+	}
+
+	handler := NewEventsHandler(cfg, mockClient)
+	err := handler.SendEvent("TestNS", "TestType", map[string]string{"key": "value"})
+
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+
+	if !hookCalled {
+		t.Error("Expected OnEventSent hook to be called")
+	}
+	if hookNamespace != "TestNS" {
+		t.Errorf("Expected namespace 'TestNS', got: '%s'", hookNamespace)
+	}
+	if hookEventType != "TestType" {
+		t.Errorf("Expected eventType 'TestType', got: '%s'", hookEventType)
+	}
+	if hookDuration < 10*time.Millisecond {
+		t.Errorf("Expected duration >= 10ms, got: %v", hookDuration)
+	}
+	if hookErr != nil {
+		t.Errorf("Expected nil error in hook, got: %v", hookErr)
+	}
+}
+
+// TestHooks_OnEventSent_Error tests OnEventSent hook on error
+func TestHooks_OnEventSent_Error(t *testing.T) {
+	var hookErr error
+
+	mockClient := &MockNatsClient{
+		DoRequestFunc: func(correlationId, subject string, headers nats_service_client.Header, data []byte, timeout time.Duration) (*nats_service_client.NatsResponseMessage, *nats_service.NatsServiceError, error) {
+			return nil, nil, errors.New("send failed")
+		},
+	}
+
+	cfg := Config{
+		DefaultNamespace: "HookNS",
+		Subject:          "hook.subject",
+		Timeout:          10 * time.Second,
+		WorkerPoolSize:   2,
+		EventQueueSize:   10,
+		Hooks: &Hooks{
+			OnEventSent: func(namespace, eventType string, duration time.Duration, err error) {
+				hookErr = err
+			},
+		},
+	}
+
+	handler := NewEventsHandler(cfg, mockClient)
+	_ = handler.SendEvent("TestNS", "TestType", map[string]string{"key": "value"})
+
+	if hookErr == nil {
+		t.Error("Expected error to be passed to hook")
+	}
+	if !strings.Contains(hookErr.Error(), "send failed") {
+		t.Errorf("Expected error to contain 'send failed', got: %v", hookErr)
+	}
+}
+
+// TestHooks_OnEventQueued tests the OnEventQueued hook
+func TestHooks_OnEventQueued(t *testing.T) {
+	var hookCalled bool
+	var hookNamespace, hookEventType string
+	var hookDropped bool
+
+	mockClient := &MockNatsClient{}
+
+	cfg := Config{
+		DefaultNamespace: "HookNS",
+		Subject:          "hook.subject",
+		Timeout:          10 * time.Second,
+		WorkerPoolSize:   2,
+		EventQueueSize:   10,
+		Hooks: &Hooks{
+			OnEventQueued: func(namespace, eventType string, dropped bool) {
+				hookCalled = true
+				hookNamespace = namespace
+				hookEventType = eventType
+				hookDropped = dropped
+			},
+		},
+	}
+
+	handler := NewEventsHandler(cfg, mockClient)
+	queued := handler.SendEventAsync("TestNS", "TestType", map[string]string{"key": "value"})
+
+	if !queued {
+		t.Error("Expected event to be queued")
+	}
+	if !hookCalled {
+		t.Error("Expected OnEventQueued hook to be called")
+	}
+	if hookNamespace != "TestNS" {
+		t.Errorf("Expected namespace 'TestNS', got: '%s'", hookNamespace)
+	}
+	if hookEventType != "TestType" {
+		t.Errorf("Expected eventType 'TestType', got: '%s'", hookEventType)
+	}
+	if hookDropped {
+		t.Error("Expected dropped to be false")
+	}
+
+	// Cleanup
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_ = handler.Shutdown(ctx)
+}
+
+// TestHooks_OnEventQueued_Dropped tests OnEventQueued when queue is full
+func TestHooks_OnEventQueued_Dropped(t *testing.T) {
+	var droppedCount int64
+
+	mockClient := &MockNatsClient{
+		DoRequestFunc: func(correlationId, subject string, headers nats_service_client.Header, data []byte, timeout time.Duration) (*nats_service_client.NatsResponseMessage, *nats_service.NatsServiceError, error) {
+			time.Sleep(100 * time.Millisecond) // Slow processing
+			return &nats_service_client.NatsResponseMessage{Data: []byte("success")}, nil, nil
+		},
+	}
+
+	cfg := Config{
+		DefaultNamespace: "HookNS",
+		Subject:          "hook.subject",
+		Timeout:          10 * time.Second,
+		WorkerPoolSize:   1,
+		EventQueueSize:   2, // Very small queue
+		Hooks: &Hooks{
+			OnEventQueued: func(namespace, eventType string, dropped bool) {
+				if dropped {
+					atomic.AddInt64(&droppedCount, 1)
+				}
+			},
+		},
+	}
+
+	handler := NewEventsHandler(cfg, mockClient)
+
+	// Fill queue and overflow
+	for i := 0; i < 10; i++ {
+		handler.SendEventAsync("TestNS", fmt.Sprintf("Type%d", i), map[string]string{"key": "value"})
+	}
+
+	// Should have dropped some events
+	if atomic.LoadInt64(&droppedCount) == 0 {
+		t.Error("Expected some events to be dropped")
+	}
+
+	// Cleanup
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = handler.Shutdown(ctx)
+}
+
+// TestHooks_OnEventProcessed tests the OnEventProcessed hook
+func TestHooks_OnEventProcessed(t *testing.T) {
+	var hookCalled int64
+	var lastNamespace, lastEventType string
+	var lastDuration time.Duration
+	var lastErr error
+	var mu sync.Mutex
+
+	mockClient := &MockNatsClient{
+		DoRequestFunc: func(correlationId, subject string, headers nats_service_client.Header, data []byte, timeout time.Duration) (*nats_service_client.NatsResponseMessage, *nats_service.NatsServiceError, error) {
+			time.Sleep(5 * time.Millisecond)
+			return &nats_service_client.NatsResponseMessage{Data: []byte("success")}, nil, nil
+		},
+	}
+
+	cfg := Config{
+		DefaultNamespace: "HookNS",
+		Subject:          "hook.subject",
+		Timeout:          10 * time.Second,
+		WorkerPoolSize:   2,
+		EventQueueSize:   10,
+		Hooks: &Hooks{
+			OnEventProcessed: func(namespace, eventType string, duration time.Duration, err error) {
+				atomic.AddInt64(&hookCalled, 1)
+				mu.Lock()
+				lastNamespace = namespace
+				lastEventType = eventType
+				lastDuration = duration
+				lastErr = err
+				mu.Unlock()
+			},
+		},
+	}
+
+	handler := NewEventsHandler(cfg, mockClient)
+	handler.SendEventAsync("TestNS", "TestType", map[string]string{"key": "value"})
+
+	// Wait for processing
+	time.Sleep(100 * time.Millisecond)
+
+	if atomic.LoadInt64(&hookCalled) != 1 {
+		t.Errorf("Expected OnEventProcessed to be called once, got: %d", atomic.LoadInt64(&hookCalled))
+	}
+
+	mu.Lock()
+	if lastNamespace != "TestNS" {
+		t.Errorf("Expected namespace 'TestNS', got: '%s'", lastNamespace)
+	}
+	if lastEventType != "TestType" {
+		t.Errorf("Expected eventType 'TestType', got: '%s'", lastEventType)
+	}
+	if lastDuration < 5*time.Millisecond {
+		t.Errorf("Expected duration >= 5ms, got: %v", lastDuration)
+	}
+	if lastErr != nil {
+		t.Errorf("Expected nil error, got: %v", lastErr)
+	}
+	mu.Unlock()
+
+	// Cleanup
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_ = handler.Shutdown(ctx)
+}
+
+// TestMultipleHandlers tests using multiple independent handlers
+func TestMultipleHandlers(t *testing.T) {
+	mockClient1 := &MockNatsClient{}
+	mockClient2 := &MockNatsClient{}
+
+	cfg1 := Config{
+		DefaultNamespace: "NS1",
+		Subject:          "subject1",
+		Timeout:          10 * time.Second,
+		WorkerPoolSize:   2,
+		EventQueueSize:   10,
+	}
+
+	cfg2 := Config{
+		DefaultNamespace: "NS2",
+		Subject:          "subject2",
+		Timeout:          20 * time.Second,
+		WorkerPoolSize:   4,
+		EventQueueSize:   20,
+	}
+
+	handler1 := NewEventsHandler(cfg1, mockClient1)
+	handler2 := NewEventsHandler(cfg2, mockClient2)
+
+	// Send events through both handlers
+	_ = handler1.SendEvent("", "Type1", map[string]string{"handler": "1"})
+	_ = handler2.SendEvent("", "Type2", map[string]string{"handler": "2"})
+
+	// Verify they used their own configs
+	if mockClient1.LastSubject != "subject1.NS1.Type1" {
+		t.Errorf("Expected subject 'subject1.NS1.Type1', got: '%s'", mockClient1.LastSubject)
+	}
+	if mockClient2.LastSubject != "subject2.NS2.Type2" {
+		t.Errorf("Expected subject 'subject2.NS2.Type2', got: '%s'", mockClient2.LastSubject)
+	}
+
+	// Verify call counts are independent
+	if mockClient1.CallCount() != 1 {
+		t.Errorf("Expected handler1 to have 1 call, got: %d", mockClient1.CallCount())
+	}
+	if mockClient2.CallCount() != 1 {
+		t.Errorf("Expected handler2 to have 1 call, got: %d", mockClient2.CallCount())
 	}
 }

@@ -37,6 +37,25 @@ type Config struct {
 	// EventQueueSize is the size of the async event queue.
 	// Can be set via EVENTS_QUEUE_SIZE env var. Defaults to 1000.
 	EventQueueSize int
+
+	// Hooks provides optional callbacks for observability.
+	Hooks *Hooks
+}
+
+// Hooks provides callbacks for observability and metrics collection.
+type Hooks struct {
+	// OnEventSent is called after each synchronous event send attempt completes.
+	// duration is the time taken to send the event.
+	// err is nil on success.
+	OnEventSent func(namespace, eventType string, duration time.Duration, err error)
+
+	// OnEventQueued is called when an async event is submitted.
+	// dropped is true if the queue was full and the event was discarded.
+	OnEventQueued func(namespace, eventType string, dropped bool)
+
+	// OnEventProcessed is called after an async worker processes an event.
+	// err is nil on success.
+	OnEventProcessed func(namespace, eventType string, duration time.Duration, err error)
 }
 
 // DefaultConfig returns a Config with default values, reading from environment variables if set.
@@ -86,21 +105,24 @@ type NatsClient interface {
 	DoRequest(correlationId string, subject string, headers nats_service_client.Header, data []byte, timeout time.Duration) (*nats_service_client.NatsResponseMessage, *nats_service.NatsServiceError, error)
 }
 
-var (
-	config     Config
-	configOnce sync.Once
+// EventsHandler manages event publishing with its own configuration and client.
+// Use NewEventsHandler to create an instance, or use the package-level functions
+// for a shared global handler.
+type EventsHandler struct {
+	config Config
 
-	natsClient   NatsClient
-	natsClientMu sync.RWMutex
-	natsInitErr  error
+	clientMu  sync.RWMutex
+	client    NatsClient
+	clientErr error
 
-	// Worker pool for async event sending
-	eventQueue    chan eventWork
 	poolOnce      sync.Once
+	eventQueue    chan eventWork
 	poolStopCh    chan struct{}
-	poolStoppedCh chan struct{}
 	poolWg        sync.WaitGroup
-)
+	shutdownOnce  sync.Once
+	shutdownMu    sync.RWMutex
+	shuttingDown  bool
+}
 
 type eventWork struct {
 	ctx            context.Context
@@ -109,203 +131,336 @@ type eventWork struct {
 	payload        interface{}
 }
 
-// Init initializes the events handler with the given configuration.
-// If cfg is nil, DefaultConfig() is used.
-// This function is safe to call multiple times; subsequent calls are no-ops.
-func Init(cfg *Config) {
-	configOnce.Do(func() {
-		if cfg != nil {
-			config = *cfg
-		} else {
-			config = DefaultConfig()
-		}
-		slog.Info("Events handler initialized",
-			"defaultNamespace", config.DefaultNamespace,
-			"subject", config.Subject,
-			"timeout", config.Timeout,
-			"workerPoolSize", config.WorkerPoolSize,
-			"eventQueueSize", config.EventQueueSize,
-		)
-	})
-}
-
-// ensureInit ensures the handler is initialized with defaults if Init hasn't been called.
-func ensureInit() {
-	Init(nil)
-}
-
-// GetNatsClient returns the NATS client, creating it if necessary.
-// Returns an error if client creation fails. Safe to call concurrently.
-func GetNatsClient() (NatsClient, error) {
-	natsClientMu.RLock()
-	if natsClient != nil {
-		defer natsClientMu.RUnlock()
-		return natsClient, nil
+// NewEventsHandler creates a new EventsHandler with the given configuration.
+// If client is nil, a client will be created lazily on first use.
+func NewEventsHandler(cfg Config, client NatsClient) *EventsHandler {
+	h := &EventsHandler{
+		config: cfg,
+		client: client,
 	}
-	natsClientMu.RUnlock()
+	slog.Info("Events handler created",
+		"defaultNamespace", cfg.DefaultNamespace,
+		"subject", cfg.Subject,
+		"timeout", cfg.Timeout,
+		"workerPoolSize", cfg.WorkerPoolSize,
+		"eventQueueSize", cfg.EventQueueSize,
+	)
+	return h
+}
 
-	natsClientMu.Lock()
-	defer natsClientMu.Unlock()
+// GetClient returns the NATS client, creating it if necessary.
+func (h *EventsHandler) GetClient() (NatsClient, error) {
+	h.clientMu.RLock()
+	if h.client != nil {
+		defer h.clientMu.RUnlock()
+		return h.client, nil
+	}
+	h.clientMu.RUnlock()
 
-	// Double-check after acquiring write lock
-	if natsClient != nil {
-		return natsClient, nil
+	h.clientMu.Lock()
+	defer h.clientMu.Unlock()
+
+	if h.client != nil {
+		return h.client, nil
 	}
 
 	client, err := nats_service_client.NewClient()
 	if err != nil {
-		natsInitErr = fmt.Errorf("error creating NATS client: %w", err)
+		h.clientErr = fmt.Errorf("error creating NATS client: %w", err)
 		slog.Error("error creating NATS client", "error", err)
-		return nil, natsInitErr
+		return nil, h.clientErr
 	}
 
-	natsClient = client
-	natsInitErr = nil
-	return natsClient, nil
+	h.client = client
+	h.clientErr = nil
+	return h.client, nil
 }
 
-// SetNatsClient sets a custom NATS client (useful for testing).
-func SetNatsClient(client NatsClient) {
-	natsClientMu.Lock()
-	defer natsClientMu.Unlock()
-	natsClient = client
-	natsInitErr = nil
+// SetClient sets a custom NATS client (useful for testing).
+func (h *EventsHandler) SetClient(client NatsClient) {
+	h.clientMu.Lock()
+	defer h.clientMu.Unlock()
+	h.client = client
+	h.clientErr = nil
 }
 
-// ResetNatsClient resets the NATS client, allowing reinitialization.
-// Useful for testing or recovering from connection failures.
-func ResetNatsClient() {
-	natsClientMu.Lock()
-	defer natsClientMu.Unlock()
-	natsClient = nil
-	natsInitErr = nil
+// GetConfig returns a copy of the current configuration.
+func (h *EventsHandler) GetConfig() Config {
+	return h.config
 }
 
 // SendEvent sends an event synchronously and returns any error.
-// Use SendEventWithContext for cancellation support.
-func SendEvent(eventNamespace string, eventType string, payload interface{}) error {
-	return SendEventWithContext(context.Background(), eventNamespace, eventType, payload)
+func (h *EventsHandler) SendEvent(eventNamespace string, eventType string, payload interface{}) error {
+	return h.SendEventWithContext(context.Background(), eventNamespace, eventType, payload)
 }
 
 // SendEventWithContext sends an event synchronously with context support.
-func SendEventWithContext(ctx context.Context, eventNamespace string, eventType string, payload interface{}) error {
-	ensureInit()
-
-	client, err := GetNatsClient()
+func (h *EventsHandler) SendEventWithContext(ctx context.Context, eventNamespace string, eventType string, payload interface{}) error {
+	client, err := h.GetClient()
 	if err != nil {
 		return err
 	}
-
-	return sendEventWithClient(ctx, client, eventNamespace, eventType, payload)
+	return h.sendEventWithClient(ctx, client, eventNamespace, eventType, payload)
 }
 
 // SendEventWithClient sends an event using the provided client.
-// This is useful for dependency injection and testing.
-func SendEventWithClient(ctx context.Context, client NatsClient, eventNamespace string, eventType string, payload interface{}) error {
-	ensureInit()
-	return sendEventWithClient(ctx, client, eventNamespace, eventType, payload)
+func (h *EventsHandler) SendEventWithClient(ctx context.Context, client NatsClient, eventNamespace string, eventType string, payload interface{}) error {
+	return h.sendEventWithClient(ctx, client, eventNamespace, eventType, payload)
 }
 
-// sendEventWithClient contains the core event sending logic.
-func sendEventWithClient(ctx context.Context, client NatsClient, eventNamespace string, eventType string, payload interface{}) error {
+func (h *EventsHandler) sendEventWithClient(ctx context.Context, client NatsClient, eventNamespace string, eventType string, payload interface{}) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
 	}
 
+	start := time.Now()
+	var sendErr error
+	defer func() {
+		if h.config.Hooks != nil && h.config.Hooks.OnEventSent != nil {
+			h.config.Hooks.OnEventSent(eventNamespace, eventType, time.Since(start), sendErr)
+		}
+	}()
+
 	eventPayload, err := CreateEvent(payload)
 	if err != nil {
-		return fmt.Errorf("error creating event: %w", err)
+		sendErr = fmt.Errorf("error creating event: %w", err)
+		return sendErr
 	}
 
 	if eventNamespace == "" {
-		eventNamespace = config.DefaultNamespace
+		eventNamespace = h.config.DefaultNamespace
 	}
 
-	subject := config.Subject + "." + eventNamespace + "." + eventType
-	_, nSvrErr, err := client.DoRequest("", subject, nil, eventPayload, config.Timeout)
+	subject := h.config.Subject + "." + eventNamespace + "." + eventType
+	_, nSvrErr, err := client.DoRequest("", subject, nil, eventPayload, h.config.Timeout)
 	if err != nil {
-		return fmt.Errorf("error sending event request: %w", err)
+		sendErr = fmt.Errorf("error sending event request: %w", err)
+		return sendErr
 	}
 	if nSvrErr != nil {
-		return fmt.Errorf("NATS service error: status=%d, message=%s", nSvrErr.Status, nSvrErr.ErrorMessage)
+		sendErr = fmt.Errorf("NATS service error: status=%d, message=%s", nSvrErr.Status, nSvrErr.ErrorMessage)
+		return sendErr
 	}
 
 	return nil
 }
 
 // initWorkerPool initializes the worker pool for async event sending.
-func initWorkerPool() {
-	poolOnce.Do(func() {
-		ensureInit()
-		eventQueue = make(chan eventWork, config.EventQueueSize)
-		poolStopCh = make(chan struct{})
-		poolStoppedCh = make(chan struct{})
+func (h *EventsHandler) initWorkerPool() {
+	h.poolOnce.Do(func() {
+		h.eventQueue = make(chan eventWork, h.config.EventQueueSize)
+		h.poolStopCh = make(chan struct{})
 
-		poolWg.Add(config.WorkerPoolSize)
-		for i := 0; i < config.WorkerPoolSize; i++ {
-			go eventWorker()
+		h.poolWg.Add(h.config.WorkerPoolSize)
+		for i := 0; i < h.config.WorkerPoolSize; i++ {
+			go h.eventWorker()
 		}
 
-		// Goroutine to signal when all workers have stopped
-		go func() {
-			poolWg.Wait()
-			close(poolStoppedCh)
-		}()
-
-		slog.Info("Event worker pool initialized", "workers", config.WorkerPoolSize, "queueSize", config.EventQueueSize)
+		slog.Info("Event worker pool initialized", "workers", h.config.WorkerPoolSize, "queueSize", h.config.EventQueueSize)
 	})
 }
 
-// eventWorker processes events from the queue.
-func eventWorker() {
-	defer poolWg.Done()
+func (h *EventsHandler) eventWorker() {
+	defer h.poolWg.Done()
 	for {
 		select {
-		case work, ok := <-eventQueue:
+		case work, ok := <-h.eventQueue:
 			if !ok {
-				return // channel closed
+				return
 			}
-			if err := SendEventWithContext(work.ctx, work.eventNamespace, work.eventType, work.payload); err != nil {
+			start := time.Now()
+			err := h.SendEventWithContext(work.ctx, work.eventNamespace, work.eventType, work.payload)
+			if err != nil {
 				slog.Error("Error sending async event", "namespace", work.eventNamespace, "type", work.eventType, "error", err)
 			}
-		case <-poolStopCh:
+			if h.config.Hooks != nil && h.config.Hooks.OnEventProcessed != nil {
+				h.config.Hooks.OnEventProcessed(work.eventNamespace, work.eventType, time.Since(start), err)
+			}
+		case <-h.poolStopCh:
 			return
 		}
 	}
 }
 
 // SendEventAsync queues an event for asynchronous sending via the worker pool.
-// This is the preferred method for fire-and-forget event sending.
-// If the queue is full, the event is dropped with a warning log.
-// Returns true if the event was queued, false if dropped.
-func SendEventAsync(eventNamespace string, eventType string, payload interface{}) bool {
-	return SendEventAsyncWithContext(context.Background(), eventNamespace, eventType, payload)
+// Returns true if the event was queued, false if dropped (queue full or shutting down).
+func (h *EventsHandler) SendEventAsync(eventNamespace string, eventType string, payload interface{}) bool {
+	return h.SendEventAsyncWithContext(context.Background(), eventNamespace, eventType, payload)
 }
 
 // SendEventAsyncWithContext queues an event for asynchronous sending with context support.
 // Returns true if the event was queued, false if dropped.
-func SendEventAsyncWithContext(ctx context.Context, eventNamespace string, eventType string, payload interface{}) bool {
-	initWorkerPool()
+func (h *EventsHandler) SendEventAsyncWithContext(ctx context.Context, eventNamespace string, eventType string, payload interface{}) bool {
+	h.shutdownMu.RLock()
+	if h.shuttingDown {
+		h.shutdownMu.RUnlock()
+		if h.config.Hooks != nil && h.config.Hooks.OnEventQueued != nil {
+			h.config.Hooks.OnEventQueued(eventNamespace, eventType, true)
+		}
+		slog.Warn("Event rejected, handler shutting down", "namespace", eventNamespace, "type", eventType)
+		return false
+	}
+	h.shutdownMu.RUnlock()
+
+	h.initWorkerPool()
 
 	select {
-	case eventQueue <- eventWork{ctx, eventNamespace, eventType, payload}:
+	case h.eventQueue <- eventWork{ctx, eventNamespace, eventType, payload}:
+		if h.config.Hooks != nil && h.config.Hooks.OnEventQueued != nil {
+			h.config.Hooks.OnEventQueued(eventNamespace, eventType, false)
+		}
 		return true
 	default:
+		if h.config.Hooks != nil && h.config.Hooks.OnEventQueued != nil {
+			h.config.Hooks.OnEventQueued(eventNamespace, eventType, true)
+		}
 		slog.Warn("Event queue full, dropping event", "namespace", eventNamespace, "type", eventType)
 		return false
 	}
 }
 
-// StopEventWorkerPool gracefully stops the event worker pool.
-// Call during application shutdown.
-func StopEventWorkerPool() {
-	if poolStopCh != nil {
-		close(poolStopCh)
-		<-poolStoppedCh // wait for workers to finish
-		slog.Info("Event worker pool stopped")
+// Shutdown gracefully stops the event worker pool, draining queued events.
+// It blocks until all queued events are processed or the context is cancelled.
+// After Shutdown is called, SendEventAsync will reject new events.
+func (h *EventsHandler) Shutdown(ctx context.Context) error {
+	var shutdownErr error
+	h.shutdownOnce.Do(func() {
+		// Mark as shutting down to reject new events
+		h.shutdownMu.Lock()
+		h.shuttingDown = true
+		h.shutdownMu.Unlock()
+
+		// If pool was never initialized, nothing to do
+		if h.eventQueue == nil {
+			return
+		}
+
+		slog.Info("Shutting down event handler, draining queue", "queuedEvents", len(h.eventQueue))
+
+		// Close the queue to signal workers to drain and exit
+		close(h.eventQueue)
+
+		// Wait for workers to finish or context to cancel
+		done := make(chan struct{})
+		go func() {
+			h.poolWg.Wait()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			slog.Info("Event handler shutdown complete, all events processed")
+		case <-ctx.Done():
+			// Context cancelled, signal workers to stop immediately
+			close(h.poolStopCh)
+			shutdownErr = ctx.Err()
+			slog.Warn("Event handler shutdown interrupted", "error", shutdownErr, "remainingEvents", len(h.eventQueue))
+		}
+	})
+	return shutdownErr
+}
+
+// --- Global/package-level functions for backward compatibility ---
+
+var (
+	defaultHandler     *EventsHandler
+	defaultHandlerOnce sync.Once
+	defaultHandlerMu   sync.RWMutex
+
+	// Legacy support: allow overriding config before first use
+	pendingConfig   *Config
+	pendingConfigMu sync.Mutex
+)
+
+// Init initializes the global events handler with the given configuration.
+// If cfg is nil, DefaultConfig() is used.
+// This function is safe to call multiple times; subsequent calls are no-ops.
+func Init(cfg *Config) {
+	pendingConfigMu.Lock()
+	if cfg != nil {
+		pendingConfig = cfg
 	}
+	pendingConfigMu.Unlock()
+	getDefaultHandler()
+}
+
+func getDefaultHandler() *EventsHandler {
+	defaultHandlerOnce.Do(func() {
+		pendingConfigMu.Lock()
+		cfg := pendingConfig
+		pendingConfigMu.Unlock()
+
+		if cfg == nil {
+			c := DefaultConfig()
+			cfg = &c
+		}
+		defaultHandler = NewEventsHandler(*cfg, nil)
+	})
+	return defaultHandler
+}
+
+// GetNatsClient returns the NATS client from the global handler, creating it if necessary.
+func GetNatsClient() (NatsClient, error) {
+	return getDefaultHandler().GetClient()
+}
+
+// SetNatsClient sets a custom NATS client on the global handler (useful for testing).
+func SetNatsClient(client NatsClient) {
+	getDefaultHandler().SetClient(client)
+}
+
+// ResetNatsClient resets the NATS client on the global handler.
+func ResetNatsClient() {
+	h := getDefaultHandler()
+	h.clientMu.Lock()
+	defer h.clientMu.Unlock()
+	h.client = nil
+	h.clientErr = nil
+}
+
+// SendEvent sends an event synchronously using the global handler.
+func SendEvent(eventNamespace string, eventType string, payload interface{}) error {
+	return getDefaultHandler().SendEvent(eventNamespace, eventType, payload)
+}
+
+// SendEventWithContext sends an event synchronously with context support using the global handler.
+func SendEventWithContext(ctx context.Context, eventNamespace string, eventType string, payload interface{}) error {
+	return getDefaultHandler().SendEventWithContext(ctx, eventNamespace, eventType, payload)
+}
+
+// SendEventWithClient sends an event using the provided client via the global handler.
+func SendEventWithClient(ctx context.Context, client NatsClient, eventNamespace string, eventType string, payload interface{}) error {
+	return getDefaultHandler().SendEventWithClient(ctx, client, eventNamespace, eventType, payload)
+}
+
+// SendEventAsync queues an event for asynchronous sending using the global handler.
+func SendEventAsync(eventNamespace string, eventType string, payload interface{}) bool {
+	return getDefaultHandler().SendEventAsync(eventNamespace, eventType, payload)
+}
+
+// SendEventAsyncWithContext queues an event for asynchronous sending with context using the global handler.
+func SendEventAsyncWithContext(ctx context.Context, eventNamespace string, eventType string, payload interface{}) bool {
+	return getDefaultHandler().SendEventAsyncWithContext(ctx, eventNamespace, eventType, payload)
+}
+
+// StopEventWorkerPool gracefully stops the global event worker pool.
+// Deprecated: Use Shutdown(ctx) for graceful shutdown with queue draining.
+func StopEventWorkerPool() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_ = getDefaultHandler().Shutdown(ctx)
+}
+
+// Shutdown gracefully stops the global event handler, draining queued events.
+func Shutdown(ctx context.Context) error {
+	return getDefaultHandler().Shutdown(ctx)
+}
+
+// GetConfig returns the current configuration from the global handler.
+func GetConfig() Config {
+	return getDefaultHandler().GetConfig()
 }
 
 // CreateEvent creates an event with the given payload.
@@ -326,9 +481,14 @@ func CreateEvent(payload interface{}) ([]byte, error) {
 	return bytes, nil
 }
 
-// GetConfig returns the current configuration.
-// Returns a copy to prevent modification.
-func GetConfig() Config {
-	ensureInit()
-	return config
+// ResetDefaultHandler resets the global handler for testing purposes.
+// This should only be used in tests.
+func ResetDefaultHandler() {
+	defaultHandlerMu.Lock()
+	defer defaultHandlerMu.Unlock()
+	defaultHandlerOnce = sync.Once{}
+	defaultHandler = nil
+	pendingConfigMu.Lock()
+	pendingConfig = nil
+	pendingConfigMu.Unlock()
 }
