@@ -115,6 +115,93 @@ logger := slog.Default()
 loggingMw := raslogging.LoggingMiddleware(logger, "/health", "/ready") // skip paths optional
 ```
 
+### rasevents
+
+Event publishing via NATS with sync/async support, worker pools, graceful shutdown, and observability hooks.
+
+```go
+import "github.com/transactrx/ras-utils/rasevents"
+
+// Option 1: Use global functions with package-level handler
+rasevents.Init(&rasevents.Config{
+    DefaultNamespace: "MyService",
+    Subject:          "custom.events.subject",
+    Timeout:          30 * time.Second,
+    WorkerPoolSize:   20,
+    EventQueueSize:   500,
+})
+
+err := rasevents.SendEvent("PatientNotification", "Email", payload)
+queued := rasevents.SendEventAsync("PatientNotification", "SMS", payload)
+
+// Graceful shutdown (drains queue before stopping)
+defer rasevents.Shutdown(context.Background())
+
+// Option 2: Create independent handler instances
+handler := rasevents.NewEventsHandler(rasevents.Config{
+    DefaultNamespace: "MyService",
+    Subject:          "custom.events.subject",
+    Timeout:          10 * time.Second,
+    WorkerPoolSize:   5,
+    EventQueueSize:   100,
+}, nil) // nil client = create lazily
+
+err := handler.SendEvent("Namespace", "EventType", payload)
+queued := handler.SendEventAsync("Namespace", "EventType", payload)
+
+// Shutdown with timeout
+ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+defer cancel()
+if err := handler.Shutdown(ctx); err != nil {
+    log.Printf("Shutdown interrupted: %v", err)
+}
+```
+
+**Observability hooks:**
+
+```go
+handler := rasevents.NewEventsHandler(rasevents.Config{
+    // ... config ...
+    Hooks: &rasevents.Hooks{
+        // Called after each synchronous send
+        OnEventSent: func(namespace, eventType string, duration time.Duration, err error) {
+            metrics.RecordLatency("event_send", duration)
+            if err != nil {
+                metrics.IncrCounter("event_send_errors")
+            }
+        },
+        // Called when async event is queued (dropped=true if queue full)
+        OnEventQueued: func(namespace, eventType string, dropped bool) {
+            if dropped {
+                metrics.IncrCounter("event_dropped")
+            }
+        },
+        // Called after async worker processes an event
+        OnEventProcessed: func(namespace, eventType string, duration time.Duration, err error) {
+            metrics.RecordLatency("event_process", duration)
+        },
+    },
+}, nil)
+```
+
+**Testing:**
+
+```go
+// Inject mock client for testing
+rasevents.SetNatsClient(mockClient)
+defer rasevents.ResetNatsClient()
+
+// Or with handler instances
+handler := rasevents.NewEventsHandler(cfg, mockClient)
+```
+
+**Environment variables:**
+- `EVENTS_DEFAULT_NAMESPACE` - Default namespace (required)
+- `EVENTS_SUBJECT` - Base NATS subject (required)
+- `EVENTS_TIMEOUT_SECONDS` - Request timeout in seconds (default: 60)
+- `EVENTS_WORKER_POOL_SIZE` - Async worker count (default: 50)
+- `EVENTS_QUEUE_SIZE` - Async queue size (default: 1000)
+
 ### rasstack
 
 Middleware composition utility for chaining HTTP middleware.
