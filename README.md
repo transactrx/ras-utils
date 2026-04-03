@@ -196,8 +196,8 @@ handler := rasevents.NewEventsHandler(cfg, mockClient)
 ```
 
 **Environment variables:**
-- `EVENTS_DEFAULT_NAMESPACE` - Default namespace (default: "PatientNotification")
-- `EVENTS_SUBJECT` - Base NATS subject (default: "trx.eventscollector.collect")
+- `EVENTS_DEFAULT_NAMESPACE` - Default namespace (required)
+- `EVENTS_SUBJECT` - Base NATS subject (required)
 - `EVENTS_TIMEOUT_SECONDS` - Request timeout in seconds (default: 60)
 - `EVENTS_WORKER_POOL_SIZE` - Async worker count (default: 50)
 - `EVENTS_QUEUE_SIZE` - Async queue size (default: 1000)

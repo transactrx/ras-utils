@@ -18,12 +18,12 @@ import (
 
 // Config holds the configuration for the events handler.
 type Config struct {
-	// DefaultNamespace is the default event namespace if none is provided.
-	// Can be set via EVENTS_DEFAULT_NAMESPACE env var. Defaults to "PatientNotification".
+	// DefaultNamespace is the default event namespace.
+	// Can be set via EVENTS_DEFAULT_NAMESPACE env var.
 	DefaultNamespace string
 
 	// Subject is the base NATS subject for event collection.
-	// Can be set via EVENTS_SUBJECT env var. Defaults to "trx.eventscollector.collect".
+	// Can be set via EVENTS_SUBJECT env var.
 	Subject string
 
 	// Timeout is the timeout for NATS requests.
