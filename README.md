@@ -8,9 +8,9 @@ Go utility library providing shared helper functions for the Clinical+ ecosystem
 go get github.com/transactrx/ras-utils
 ```
 
-## Packages
+# Packages
 
-### rascache
+## rascache
 
 Generic in-memory key-value cache with TTL expiration and thread-safe operations.
 
@@ -44,7 +44,7 @@ c.Delete("user:123")
 c.Clear()
 ```
 
-### rasconfig
+## rasconfig
 
 Database configuration and environment variable helpers.
 
@@ -78,7 +78,7 @@ pool, err := rasconfig.InitDbPool(ctx, cfg)
 readOnlyPool, err := rasconfig.InitReadOnlyDbPool(ctx, cfg)
 ```
 
-### rasconversion
+## rasconversion
 
 Type conversion helpers for PostgreSQL (pgx/pgtype). Converts nullable Go types to pgtype equivalents with proper null handling.
 
@@ -100,7 +100,7 @@ pgBool, err := rasconversion.TryConvertToPgtypeBool(boolPtr)
 pgTime, err := rasconversion.TryConvertToPgtypeTimestamp(timePtr)
 ```
 
-### raslogging
+## raslogging
 
 HTTP request logging middleware with panic recovery and structured JSON logging.
 
@@ -115,9 +115,31 @@ logger := slog.Default()
 loggingMw := raslogging.LoggingMiddleware(logger, "/health", "/ready") // skip paths optional
 ```
 
-### rasevents
+## rasevents
 
 Event publishing via NATS with sync/async support, worker pools, graceful shutdown, and observability hooks.
+
+### Environment Variables
+
+
+### Required
+
+| Variable | Description |
+|----------|-------------|
+| `NATS_URL` | NATS server URL (e.g., `nats://localhost:4222`) |
+| `NATS_QUEUE_NAME` | Queue group name for load balancing (service only) |
+
+### Optional
+
+| Variable | Description |
+|----------|-------------|
+| `NATS_JWT` | JWT token for authenticated connections |
+| `NATS_KEY` | Private key for authenticated connections |
+| `NATS_DEBUG` | Enable debug logging (`true`/`false`) |
+| `APPID` | Application identifier for connection naming |
+| `MAX_SIZE_BEFORE_COMPRESS` | Client compression threshold (default: 2KB) |
+| `MAX_SIZE_BEFORE_CHUNK` | Client chunking threshold (default: 8KB) |
+
 
 ```go
 import "github.com/transactrx/ras-utils/rasevents"
