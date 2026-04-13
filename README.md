@@ -224,7 +224,7 @@ handler := rasevents.NewEventsHandler(cfg, mockClient)
 - `EVENTS_WORKER_POOL_SIZE` - Async worker count (default: 50)
 - `EVENTS_QUEUE_SIZE` - Async queue size (default: 1000)
 
-### rasstack
+## rasstack
 
 Middleware composition utility for chaining HTTP middleware.
 
