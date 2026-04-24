@@ -224,6 +224,42 @@ handler := rasevents.NewEventsHandler(cfg, mockClient)
 - `EVENTS_WORKER_POOL_SIZE` - Async worker count (default: 50)
 - `EVENTS_QUEUE_SIZE` - Async queue size (default: 1000)
 
+## rashttp
+
+HTTP helper functions for request parsing, response writing, and common patterns.
+
+```go
+import "github.com/transactrx/ras-utils/rashttp"
+
+// Request helpers
+ip := rashttp.GetClientIP(r)              // extracts from X-Forwarded-For, X-Real-IP, or RemoteAddr
+url := rashttp.GetFullRequestURL(r)       // reconstructs full URL including scheme/host from proxied requests
+token := rashttp.GetBearerToken(r)        // extracts bearer token from Authorization header
+isHtmx := rashttp.IsHTMX(r)               // checks HX-Request header
+isAjax := rashttp.IsAjax(r)               // checks X-Requested-With header
+
+// Query parameter parsing with defaults
+page := rashttp.QueryInt(r, "page", 1)
+sort := rashttp.QueryString(r, "sort", "created_at")
+
+// JSON request body decoding (with size limit)
+type CreateUserRequest struct {
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+payload, err := rashttp.DecodeJSON[CreateUserRequest](r, rashttp.DefaultMaxBodySize)
+
+// Response helpers
+rashttp.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+rashttp.WriteError(w, http.StatusBadRequest, "invalid input")
+rashttp.NoContent(w) // 204 response
+
+// Health check handler
+http.Handle("/health", rashttp.HealthHandler(func() error {
+    return db.Ping() // returns 200 if nil, 503 if error
+}))
+```
+
 ## rasstack
 
 Middleware composition utility for chaining HTTP middleware.
