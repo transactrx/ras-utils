@@ -249,10 +249,24 @@ type CreateUserRequest struct {
 }
 payload, err := rashttp.DecodeJSON[CreateUserRequest](r, rashttp.DefaultMaxBodySize)
 
-// Response helpers
-rashttp.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+// Response helpers — generic
+rashttp.WriteJSON(w, http.StatusOK, data)
 rashttp.WriteError(w, http.StatusBadRequest, "invalid input")
-rashttp.NoContent(w) // 204 response
+
+// Response helpers — status shorthands
+rashttp.OK(w, data)                              // 200
+rashttp.Created(w, data)                          // 201
+rashttp.Accepted(w, data)                         // 202
+rashttp.NoContent(w)                              // 204
+rashttp.BadRequest(w, "missing field")            // 400
+rashttp.Unauthorized(w, "invalid token")          // 401
+rashttp.Forbidden(w, "not allowed")               // 403
+rashttp.NotFound(w, "resource not found")         // 404
+rashttp.Conflict(w, "already exists")             // 409
+rashttp.UnprocessableEntity(w, "validation error")// 422
+rashttp.TooManyRequests(w, "rate limited")        // 429
+rashttp.InternalServerError(w, "unexpected error")// 500
+rashttp.ServiceUnavailable(w, "try again later")  // 503
 
 // Health check handler
 http.Handle("/health", rashttp.HealthHandler(func() error {

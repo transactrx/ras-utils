@@ -95,9 +95,69 @@ func WriteError(w http.ResponseWriter, status int, message string) error {
 	})
 }
 
+// OK writes a 200 response with JSON data.
+func OK(w http.ResponseWriter, data any) error {
+	return WriteJSON(w, http.StatusOK, data)
+}
+
+// Created writes a 201 response with JSON data.
+func Created(w http.ResponseWriter, data any) error {
+	return WriteJSON(w, http.StatusCreated, data)
+}
+
+// Accepted writes a 202 response with JSON data.
+func Accepted(w http.ResponseWriter, data any) error {
+	return WriteJSON(w, http.StatusAccepted, data)
+}
+
 // NoContent writes a 204 No Content response.
 func NoContent(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// BadRequest writes a 400 error response.
+func BadRequest(w http.ResponseWriter, message string) error {
+	return WriteError(w, http.StatusBadRequest, message)
+}
+
+// Unauthorized writes a 401 error response.
+func Unauthorized(w http.ResponseWriter, message string) error {
+	return WriteError(w, http.StatusUnauthorized, message)
+}
+
+// Forbidden writes a 403 error response.
+func Forbidden(w http.ResponseWriter, message string) error {
+	return WriteError(w, http.StatusForbidden, message)
+}
+
+// NotFound writes a 404 error response.
+func NotFound(w http.ResponseWriter, message string) error {
+	return WriteError(w, http.StatusNotFound, message)
+}
+
+// Conflict writes a 409 error response.
+func Conflict(w http.ResponseWriter, message string) error {
+	return WriteError(w, http.StatusConflict, message)
+}
+
+// UnprocessableEntity writes a 422 error response.
+func UnprocessableEntity(w http.ResponseWriter, message string) error {
+	return WriteError(w, http.StatusUnprocessableEntity, message)
+}
+
+// TooManyRequests writes a 429 error response.
+func TooManyRequests(w http.ResponseWriter, message string) error {
+	return WriteError(w, http.StatusTooManyRequests, message)
+}
+
+// InternalServerError writes a 500 error response.
+func InternalServerError(w http.ResponseWriter, message string) error {
+	return WriteError(w, http.StatusInternalServerError, message)
+}
+
+// ServiceUnavailable writes a 503 error response.
+func ServiceUnavailable(w http.ResponseWriter, message string) error {
+	return WriteError(w, http.StatusServiceUnavailable, message)
 }
 
 // DecodeJSON decodes JSON from the request body into a value of type T.

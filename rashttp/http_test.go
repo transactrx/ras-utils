@@ -355,6 +355,105 @@ func TestQueryInt(t *testing.T) {
 	}
 }
 
+func TestStatusHelpers(t *testing.T) {
+	tests := []struct {
+		name           string
+		fn             func(http.ResponseWriter) error
+		expectedStatus int
+		expectedBody   string
+	}{
+		{
+			name:           "OK",
+			fn:             func(w http.ResponseWriter) error { return OK(w, map[string]string{"id": "1"}) },
+			expectedStatus: http.StatusOK,
+			expectedBody:   `{"id":"1"}`,
+		},
+		{
+			name:           "Created",
+			fn:             func(w http.ResponseWriter) error { return Created(w, map[string]string{"id": "2"}) },
+			expectedStatus: http.StatusCreated,
+			expectedBody:   `{"id":"2"}`,
+		},
+		{
+			name:           "Accepted",
+			fn:             func(w http.ResponseWriter) error { return Accepted(w, map[string]string{"job": "abc"}) },
+			expectedStatus: http.StatusAccepted,
+			expectedBody:   `{"job":"abc"}`,
+		},
+		{
+			name:           "BadRequest",
+			fn:             func(w http.ResponseWriter) error { return BadRequest(w, "bad input") },
+			expectedStatus: http.StatusBadRequest,
+			expectedBody:   `{"error":"Bad Request","message":"bad input"}`,
+		},
+		{
+			name:           "Unauthorized",
+			fn:             func(w http.ResponseWriter) error { return Unauthorized(w, "no token") },
+			expectedStatus: http.StatusUnauthorized,
+			expectedBody:   `{"error":"Unauthorized","message":"no token"}`,
+		},
+		{
+			name:           "Forbidden",
+			fn:             func(w http.ResponseWriter) error { return Forbidden(w, "not allowed") },
+			expectedStatus: http.StatusForbidden,
+			expectedBody:   `{"error":"Forbidden","message":"not allowed"}`,
+		},
+		{
+			name:           "NotFound",
+			fn:             func(w http.ResponseWriter) error { return NotFound(w, "missing") },
+			expectedStatus: http.StatusNotFound,
+			expectedBody:   `{"error":"Not Found","message":"missing"}`,
+		},
+		{
+			name:           "Conflict",
+			fn:             func(w http.ResponseWriter) error { return Conflict(w, "duplicate") },
+			expectedStatus: http.StatusConflict,
+			expectedBody:   `{"error":"Conflict","message":"duplicate"}`,
+		},
+		{
+			name:           "UnprocessableEntity",
+			fn:             func(w http.ResponseWriter) error { return UnprocessableEntity(w, "validation failed") },
+			expectedStatus: http.StatusUnprocessableEntity,
+			expectedBody:   `{"error":"Unprocessable Entity","message":"validation failed"}`,
+		},
+		{
+			name:           "TooManyRequests",
+			fn:             func(w http.ResponseWriter) error { return TooManyRequests(w, "slow down") },
+			expectedStatus: http.StatusTooManyRequests,
+			expectedBody:   `{"error":"Too Many Requests","message":"slow down"}`,
+		},
+		{
+			name:           "InternalServerError",
+			fn:             func(w http.ResponseWriter) error { return InternalServerError(w, "something broke") },
+			expectedStatus: http.StatusInternalServerError,
+			expectedBody:   `{"error":"Internal Server Error","message":"something broke"}`,
+		},
+		{
+			name:           "ServiceUnavailable",
+			fn:             func(w http.ResponseWriter) error { return ServiceUnavailable(w, "down") },
+			expectedStatus: http.StatusServiceUnavailable,
+			expectedBody:   `{"error":"Service Unavailable","message":"down"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			err := tt.fn(w)
+			if err != nil {
+				t.Fatalf("%s() error = %v", tt.name, err)
+			}
+			if w.Code != tt.expectedStatus {
+				t.Errorf("status = %d, want %d", w.Code, tt.expectedStatus)
+			}
+			got := strings.TrimSpace(w.Body.String())
+			if got != tt.expectedBody {
+				t.Errorf("body = %q, want %q", got, tt.expectedBody)
+			}
+		})
+	}
+}
+
 func TestHealthHandler(t *testing.T) {
 	t.Run("healthy", func(t *testing.T) {
 		check := func() error { return nil }
