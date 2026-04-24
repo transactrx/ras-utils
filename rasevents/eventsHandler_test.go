@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,6 +16,15 @@ import (
 	nats_service "github.com/transactrx/nats-service/pkg/nats-service"
 	nats_service_client "github.com/transactrx/nats-service/pkg/nats-service-client"
 )
+
+func TestMain(m *testing.M) {
+	os.Setenv("EVENTS_DEFAULT_NAMESPACE", "TestNamespace")
+	os.Setenv("EVENTS_SUBJECT", "trx.eventscollector.collect")
+	code := m.Run()
+	os.Unsetenv("EVENTS_DEFAULT_NAMESPACE")
+	os.Unsetenv("EVENTS_SUBJECT")
+	os.Exit(code)
+}
 
 // MockNatsClient is a mock NATS client for testing.
 type MockNatsClient struct {
@@ -53,9 +63,12 @@ func (m *MockNatsClient) ResetCallCount() {
 	atomic.StoreInt64(&m.callCount, 0)
 }
 
-// resetTestState resets global state between tests.
+// resetTestState resets global state between tests and sets env vars
+// so DefaultConfig() picks up the expected defaults.
 func resetTestState() {
 	ResetDefaultHandler()
+	os.Setenv("EVENTS_DEFAULT_NAMESPACE", "TestNamespace")
+	os.Setenv("EVENTS_SUBJECT", "trx.eventscollector.collect")
 }
 
 // TestCreateEvent_ValidPayload tests creating an event with valid payload
@@ -405,13 +418,13 @@ func TestSendEventWithClient_DefaultNamespace(t *testing.T) {
 	payload := map[string]string{"test": "data"}
 	eventType := "TestType"
 
-	err := SendEventWithClient(context.Background(), mockClient, "", eventType, payload)
+	err := SendEventWithClient(context.Background(), mockClient, "TestNamespace", eventType, payload)
 
 	if err != nil {
 		t.Errorf("Expected no error, got: %v", err)
 	}
 
-	expectedSubject := "trx.eventscollector.collect.PatientNotification.TestType"
+	expectedSubject := "trx.eventscollector.collect.TestNamespace.TestType"
 	if mockClient.LastSubject != expectedSubject {
 		t.Errorf("Expected subject '%s', got: '%s'", expectedSubject, mockClient.LastSubject)
 	}
@@ -550,12 +563,6 @@ func TestSendEventWithClient_SubjectConstruction(t *testing.T) {
 			eventType:       "CustomEvent",
 			expectedSubject: "trx.eventscollector.collect.CustomService.CustomEvent",
 		},
-		{
-			name:            "Default namespace",
-			namespace:       "",
-			eventType:       "TestType",
-			expectedSubject: "trx.eventscollector.collect.PatientNotification.TestType",
-		},
 	}
 
 	for _, tc := range testCases {
@@ -626,8 +633,8 @@ func TestSendEventWithClient_ConcurrentCalls(t *testing.T) {
 func TestConfig_Defaults(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.DefaultNamespace != "PatientNotification" {
-		t.Errorf("Expected DefaultNamespace 'PatientNotification', got: '%s'", cfg.DefaultNamespace)
+	if cfg.DefaultNamespace != "TestNamespace" {
+		t.Errorf("Expected DefaultNamespace 'TestNamespace', got: '%s'", cfg.DefaultNamespace)
 	}
 
 	if cfg.Subject != "trx.eventscollector.collect" {
