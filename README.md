@@ -224,6 +224,56 @@ handler := rasevents.NewEventsHandler(cfg, mockClient)
 - `EVENTS_WORKER_POOL_SIZE` - Async worker count (default: 50)
 - `EVENTS_QUEUE_SIZE` - Async queue size (default: 1000)
 
+## rashttp
+
+HTTP helper functions for request parsing, response writing, and common patterns.
+
+```go
+import "github.com/transactrx/ras-utils/rashttp"
+
+// Request helpers
+ip := rashttp.GetClientIP(r)              // extracts from X-Forwarded-For, X-Real-IP, or RemoteAddr
+url := rashttp.GetFullRequestURL(r)       // reconstructs full URL including scheme/host from proxied requests
+token := rashttp.GetBearerToken(r)        // extracts bearer token from Authorization header
+isHtmx := rashttp.IsHTMX(r)               // checks HX-Request header
+isAjax := rashttp.IsAjax(r)               // checks X-Requested-With header
+
+// Query parameter parsing with defaults
+page := rashttp.QueryInt(r, "page", 1)
+sort := rashttp.QueryString(r, "sort", "created_at")
+
+// JSON request body decoding (with size limit)
+type CreateUserRequest struct {
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+payload, err := rashttp.DecodeJSON[CreateUserRequest](r, rashttp.DefaultMaxBodySize)
+
+// Response helpers — generic
+rashttp.WriteJSON(w, http.StatusOK, data)
+rashttp.WriteError(w, http.StatusBadRequest, "invalid input")
+
+// Response helpers — status shorthands
+rashttp.OK(w, data)                              // 200
+rashttp.Created(w, data)                          // 201
+rashttp.Accepted(w, data)                         // 202
+rashttp.NoContent(w)                              // 204
+rashttp.BadRequest(w, "missing field")            // 400
+rashttp.Unauthorized(w, "invalid token")          // 401
+rashttp.Forbidden(w, "not allowed")               // 403
+rashttp.NotFound(w, "resource not found")         // 404
+rashttp.Conflict(w, "already exists")             // 409
+rashttp.UnprocessableEntity(w, "validation error")// 422
+rashttp.TooManyRequests(w, "rate limited")        // 429
+rashttp.InternalServerError(w, "unexpected error")// 500
+rashttp.ServiceUnavailable(w, "try again later")  // 503
+
+// Health check handler
+http.Handle("/health", rashttp.HealthHandler(func() error {
+    return db.Ping() // returns 200 if nil, 503 if error
+}))
+```
+
 ## rasstack
 
 Middleware composition utility for chaining HTTP middleware.
