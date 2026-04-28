@@ -290,3 +290,31 @@ stack := rasstack.CreateStack(
 
 http.Handle("/", stack(myHandler))
 ```
+
+## rasworker
+
+Generic worker pool for concurrent job execution with graceful shutdown.
+
+```go
+import "github.com/transactrx/ras-utils/rasworker"
+
+// Create pool with 10 workers and queue size of 100
+pool := rasworker.NewPool(10, 100)
+pool.Start()
+
+// Submit jobs (returns false if queue is full)
+ok := pool.Submit(func(ctx context.Context) error {
+    // do work
+    return nil
+})
+
+// Graceful shutdown - drains queue before returning
+err := pool.Shutdown(context.Background())
+
+// Shutdown with timeout - cancels in-flight jobs if deadline exceeded
+ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+defer cancel()
+if err := pool.Shutdown(ctx); err != nil {
+    log.Printf("Shutdown timeout: %v", err)
+}
+```
