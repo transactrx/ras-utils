@@ -231,3 +231,113 @@ func TestPool_ConcurrentSubmit(t *testing.T) {
 		t.Errorf("expected %d jobs executed, got %d", expected, counter.Load())
 	}
 }
+
+func TestNewPoolWithErrorHandler(t *testing.T) {
+	var called atomic.Bool
+	expectedErr := errors.New("test error")
+
+	p := NewPoolWithErrorHandler(1, 10, func(err error) {
+		if err == expectedErr {
+			called.Store(true)
+		}
+	})
+	p.Start()
+	defer p.Shutdown(context.Background())
+
+	done := make(chan struct{})
+	p.Submit(func(ctx context.Context) error {
+		defer close(done)
+		return expectedErr
+	})
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("job not executed within timeout")
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	if !called.Load() {
+		t.Error("error handler was not called")
+	}
+}
+
+func TestPool_AddErrorHandler(t *testing.T) {
+	p := NewPool(1, 10)
+
+	var handler1Called, handler2Called atomic.Bool
+	expectedErr := errors.New("test error")
+
+	p.AddErrorHandler(func(err error) {
+		if err == expectedErr {
+			handler1Called.Store(true)
+		}
+	})
+	p.AddErrorHandler(func(err error) {
+		if err == expectedErr {
+			handler2Called.Store(true)
+		}
+	})
+
+	p.Start()
+	defer p.Shutdown(context.Background())
+
+	done := make(chan struct{})
+	p.Submit(func(ctx context.Context) error {
+		defer close(done)
+		return expectedErr
+	})
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("job not executed within timeout")
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	if !handler1Called.Load() {
+		t.Error("first error handler was not called")
+	}
+	if !handler2Called.Load() {
+		t.Error("second error handler was not called")
+	}
+}
+
+func TestPool_AddErrorHandler_Concurrent(t *testing.T) {
+	p := NewPool(4, 100)
+	p.Start()
+	defer p.Shutdown(context.Background())
+
+	var handlersAdded atomic.Int32
+	var errorsHandled atomic.Int32
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			p.AddErrorHandler(func(err error) {
+				errorsHandled.Add(1)
+			})
+			handlersAdded.Add(1)
+		}()
+	}
+	wg.Wait()
+
+	done := make(chan struct{})
+	p.Submit(func(ctx context.Context) error {
+		defer close(done)
+		return errors.New("trigger handlers")
+	})
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("job not executed within timeout")
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	if errorsHandled.Load() != handlersAdded.Load() {
+		t.Errorf("expected %d handlers called, got %d", handlersAdded.Load(), errorsHandled.Load())
+	}
+}

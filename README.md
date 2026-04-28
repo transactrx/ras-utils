@@ -293,7 +293,7 @@ http.Handle("/", stack(myHandler))
 
 ## rasworker
 
-Generic worker pool for concurrent job execution with graceful shutdown.
+Generic worker pool for concurrent job execution with graceful shutdown and error handling.
 
 ```go
 import "github.com/transactrx/ras-utils/rasworker"
@@ -317,4 +317,24 @@ defer cancel()
 if err := pool.Shutdown(ctx); err != nil {
     log.Printf("Shutdown timeout: %v", err)
 }
+```
+
+**Error handling:**
+
+```go
+// Create pool with error handler
+pool := rasworker.NewPoolWithErrorHandler(10, 100, func(err error) {
+    log.Printf("Job failed: %v", err)
+    metrics.IncrCounter("worker_errors")
+})
+
+// Or add handlers after creation (thread-safe, can be called after Start)
+pool := rasworker.NewPool(10, 100)
+pool.AddErrorHandler(func(err error) {
+    slog.Error("job error", "error", err)
+})
+pool.AddErrorHandler(func(err error) {
+    alerting.Notify(err)
+})
+pool.Start()
 ```

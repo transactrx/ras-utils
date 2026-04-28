@@ -7,23 +7,45 @@ import (
 )
 
 type Job func(ctx context.Context) error
+type ErrorHandler func(err error)
 
 type Pool struct {
-	jobs    chan Job
-	wg      sync.WaitGroup
-	ctx     context.Context
-	cancel  context.CancelFunc
-	workers int
+	jobs          chan Job
+	wg            sync.WaitGroup
+	ctx           context.Context
+	cancel        context.CancelFunc
+	workers       int
+	errorHandlers []ErrorHandler
+	handlerMu     sync.RWMutex
 }
 
 func NewPool(workers, queueSize int) *Pool {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Pool{
-		jobs:    make(chan Job, queueSize),
-		ctx:     ctx,
-		cancel:  cancel,
-		workers: workers,
+		jobs:          make(chan Job, queueSize),
+		ctx:           ctx,
+		cancel:        cancel,
+		workers:       workers,
+		errorHandlers: make([]ErrorHandler, 0),
 	}
+}
+
+func NewPoolWithErrorHandler(workers, queueSize int, onError ErrorHandler) *Pool {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	return &Pool{
+		jobs:          make(chan Job, queueSize),
+		ctx:           ctx,
+		cancel:        cancel,
+		workers:       workers,
+		errorHandlers: []ErrorHandler{onError},
+	}
+}
+
+func (p *Pool) AddErrorHandler(onError ErrorHandler) {
+	p.handlerMu.Lock()
+	defer p.handlerMu.Unlock()
+	p.errorHandlers = append(p.errorHandlers, onError)
 }
 
 func (p *Pool) Start() {
@@ -46,7 +68,13 @@ func (p *Pool) worker(id int) {
 				return
 			}
 			if err := job(p.ctx); err != nil {
-				slog.Error("job failed", "workerId", id, "error", err)
+				p.handlerMu.RLock()
+				for _, handler := range p.errorHandlers {
+					if handler != nil {
+						handler(err)
+					}
+				}
+				p.handlerMu.RUnlock()
 			}
 		}
 	}
