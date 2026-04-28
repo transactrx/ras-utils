@@ -135,7 +135,7 @@ func (c *Cache[K, T]) TryGet(key K, storeOperation StoreCacheOperation[T]) (T, b
 	}
 
 	if newValue, successful := storeOperation(); successful {
-		c.Set(key, newValue.value, newValue.expiry.Sub(time.Now()))
+		c.Set(key, newValue.value, time.Until(newValue.expiry))
 		return newValue.value, true
 	}
 

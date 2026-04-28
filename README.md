@@ -290,3 +290,51 @@ stack := rasstack.CreateStack(
 
 http.Handle("/", stack(myHandler))
 ```
+
+## rasworker
+
+Generic worker pool for concurrent job execution with graceful shutdown and error handling.
+
+```go
+import "github.com/transactrx/ras-utils/rasworker"
+
+// Create pool with 10 workers and queue size of 100
+pool := rasworker.NewPool(10, 100)
+pool.Start()
+
+// Submit jobs (returns false if queue is full)
+ok := pool.Submit(func(ctx context.Context) error {
+    // do work
+    return nil
+})
+
+// Graceful shutdown - drains queue before returning
+err := pool.Shutdown(context.Background())
+
+// Shutdown with timeout - cancels in-flight jobs if deadline exceeded
+ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+defer cancel()
+if err := pool.Shutdown(ctx); err != nil {
+    log.Printf("Shutdown timeout: %v", err)
+}
+```
+
+**Error handling:**
+
+```go
+// Create pool with error handler
+pool := rasworker.NewPoolWithErrorHandler(10, 100, func(err error) {
+    log.Printf("Job failed: %v", err)
+    metrics.IncrCounter("worker_errors")
+})
+
+// Or add handlers after creation (thread-safe, can be called after Start)
+pool := rasworker.NewPool(10, 100)
+pool.AddErrorHandler(func(err error) {
+    slog.Error("job error", "error", err)
+})
+pool.AddErrorHandler(func(err error) {
+    alerting.Notify(err)
+})
+pool.Start()
+```
