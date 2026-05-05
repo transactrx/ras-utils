@@ -74,6 +74,20 @@ func ConvertToPgtypeTimestamp(t *time.Time) pgtype.Timestamp {
 	return pgTime
 }
 
+func ConvertToPgtypeTimestamptz(t *time.Time) pgtype.Timestamptz {
+	var pgTimez pgtype.Timestamptz
+	if t != nil {
+		err := pgTimez.Scan(*t)
+		if err != nil {
+			slog.Error("failed to convert to pgtype.Timestamptz", "error", err, "time", t)
+			pgTimez = pgtype.Timestamptz{Valid: false}
+		}
+	} else {
+		pgTimez = pgtype.Timestamptz{Valid: false}
+	}
+	return pgTimez
+}
+
 // Error-returning variants for callers that need explicit error handling
 
 func TryConvertToPgtypeString(s *string) (pgtype.Text, error) {
@@ -128,4 +142,15 @@ func TryConvertToPgtypeTimestamp(t *time.Time) (pgtype.Timestamp, error) {
 		return pgtype.Timestamp{Valid: false}, err
 	}
 	return pgTime, nil
+}
+
+func TryConvertToPgtypeTimestamptz(t *time.Time) (pgtype.Timestamptz, error) {
+	if t == nil {
+		return pgtype.Timestamptz{Valid: false}, nil
+	}
+	var pgTimez pgtype.Timestamptz
+	if err := pgTimez.Scan(*t); err != nil {
+		return pgtype.Timestamptz{Valid: false}, err
+	}
+	return pgTimez, nil
 }

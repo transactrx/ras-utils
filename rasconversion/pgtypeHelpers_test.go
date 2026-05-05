@@ -151,6 +151,25 @@ func TestConvertToPgtypeTimestamp(t *testing.T) {
 	})
 }
 
+func TestConvertToPgtypeTimestamptz(t *testing.T) {
+	t.Run("converts valid time pointer", func(t *testing.T) {
+		tm := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+		result := ConvertToPgtypeTimestamptz(&tm)
+
+		if !result.Valid {
+			t.Error("expected Valid to be true for valid time pointer")
+		}
+	})
+
+	t.Run("handles nil pointer", func(t *testing.T) {
+		result := ConvertToPgtypeTimestamptz(nil)
+
+		if result.Valid {
+			t.Error("expected Valid to be false for nil pointer")
+		}
+	})
+}
+
 // Tests for TryConvert* error-returning variants
 
 func TestTryConvertToPgtypeString(t *testing.T) {
@@ -352,6 +371,46 @@ func TestTryConvertToPgtypeTimestamp(t *testing.T) {
 	t.Run("converts zero time", func(t *testing.T) {
 		tm := time.Time{}
 		result, err := TryConvertToPgtypeTimestamp(&tm)
+
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if !result.Valid {
+			t.Error("expected Valid to be true for zero time")
+		}
+	})
+}
+
+func TestTryConvertToPgtypeTimestamptz(t *testing.T) {
+	t.Run("converts valid time pointer", func(t *testing.T) {
+		tm := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+		result, err := TryConvertToPgtypeTimestamptz(&tm)
+
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if !result.Valid {
+			t.Error("expected Valid to be true")
+		}
+		if !result.Time.Equal(tm) {
+			t.Errorf("expected %v, got %v", tm, result.Time)
+		}
+	})
+
+	t.Run("handles nil pointer", func(t *testing.T) {
+		result, err := TryConvertToPgtypeTimestamptz(nil)
+
+		if err != nil {
+			t.Errorf("unexpected error for nil: %v", err)
+		}
+		if result.Valid {
+			t.Error("expected Valid to be false for nil pointer")
+		}
+	})
+
+	t.Run("converts zero time", func(t *testing.T) {
+		tm := time.Time{}
+		result, err := TryConvertToPgtypeTimestamptz(&tm)
 
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
