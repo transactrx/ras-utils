@@ -88,6 +88,34 @@ func ConvertToPgtypeTimestamptz(t *time.Time) pgtype.Timestamptz {
 	return pgTimez
 }
 
+func ConvertToPgtypeDate(d *time.Time) pgtype.Date {
+	var pgDate pgtype.Date
+	if d != nil {
+		err := pgDate.Scan(*d)
+		if err != nil {
+			slog.Error("failed to convert to pgtype.Date", "error", err, "time", d)
+			pgDate = pgtype.Date{Valid: false}
+		}
+	} else {
+		pgDate = pgtype.Date{Valid: false}
+	}
+	return pgDate
+}
+
+func ConvertToPgtypeTime(t *time.Time) pgtype.Time {
+	var pgTime pgtype.Time
+	if t != nil {
+		err := pgTime.Scan(*t)
+		if err != nil {
+			slog.Error("failed to convert to pgtype.Time", "error", err, "time", t)
+			pgTime = pgtype.Time{Valid: false}
+		}
+	} else {
+		pgTime = pgtype.Time{Valid: false}
+	}
+	return pgTime
+}
+
 // Error-returning variants for callers that need explicit error handling
 
 func TryConvertToPgtypeString(s *string) (pgtype.Text, error) {
@@ -153,4 +181,26 @@ func TryConvertToPgtypeTimestamptz(t *time.Time) (pgtype.Timestamptz, error) {
 		return pgtype.Timestamptz{Valid: false}, err
 	}
 	return pgTimez, nil
+}
+
+func TryConvertToPgtypeDate(d *time.Time) (pgtype.Date, error) {
+	if d == nil {
+		return pgtype.Date{Valid: false}, nil
+	}
+	var pgDate pgtype.Date
+	if err := pgDate.Scan(*d); err != nil {
+		return pgtype.Date{Valid: false}, err
+	}
+	return pgDate, nil
+}
+
+func TryConvertToPgtypeTime(t *time.Time) (pgtype.Time, error) {
+	if t == nil {
+		return pgtype.Time{Valid: false}, nil
+	}
+	var pgTime pgtype.Time
+	if err := pgTime.Scan(*t); err != nil {
+		return pgtype.Time{Valid: false}, err
+	}
+	return pgTime, nil
 }

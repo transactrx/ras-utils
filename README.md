@@ -92,6 +92,8 @@ pgInt2 := rasconversion.ConvertToPgtypeInt2(int32Ptr)
 pgBool := rasconversion.ConvertToPgtypeBool(boolPtr)
 pgTime := rasconversion.ConvertToPgtypeTimestamp(timePtr)
 pfTimez := rasconversion.ConvertToPgtypeTimestamptz(timePtr)
+pfDate := rasconversion.ConvertToPgtypeDate(timePtr)
+pfTime := rasconversion.ConvertToPgtypeTime(timePtr)
 
 // Error-returning variants for explicit error handling
 pgText, err := rasconversion.TryConvertToPgtypeString(stringPtr)
@@ -100,6 +102,8 @@ pgInt2, err := rasconversion.TryConvertToPgtypeInt2(int32Ptr)
 pgBool, err := rasconversion.TryConvertToPgtypeBool(boolPtr)
 pgTime, err := rasconversion.TryConvertToPgtypeTimestamp(timePtr)
 pfTimez, err := rasconversion.TryConvertToPgtypeTimestamptz(timePtr)
+pfDate, err := rasconversion.TryConvertToPgtypeDate(timePtr)
+pfTime, err := rasconversion.TryConvertToPgtypeTime(timePtr)
 ```
 
 ## raslogging
