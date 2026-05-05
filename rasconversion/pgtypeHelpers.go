@@ -103,17 +103,15 @@ func ConvertToPgtypeDate(d *time.Time) pgtype.Date {
 }
 
 func ConvertToPgtypeTime(t *time.Time) pgtype.Time {
-	var pgTime pgtype.Time
-	if t != nil {
-		err := pgTime.Scan(*t)
-		if err != nil {
-			slog.Error("failed to convert to pgtype.Time", "error", err, "time", t)
-			pgTime = pgtype.Time{Valid: false}
-		}
-	} else {
-		pgTime = pgtype.Time{Valid: false}
+	if t == nil {
+		return pgtype.Time{Valid: false}
 	}
-	return pgTime
+	// pgtype.Time stores microseconds since midnight
+	usec := int64(t.Hour())*3600_000_000 +
+		int64(t.Minute())*60_000_000 +
+		int64(t.Second())*1_000_000 +
+		int64(t.Nanosecond())/1000
+	return pgtype.Time{Microseconds: usec, Valid: true}
 }
 
 // Error-returning variants for callers that need explicit error handling
@@ -198,9 +196,10 @@ func TryConvertToPgtypeTime(t *time.Time) (pgtype.Time, error) {
 	if t == nil {
 		return pgtype.Time{Valid: false}, nil
 	}
-	var pgTime pgtype.Time
-	if err := pgTime.Scan(*t); err != nil {
-		return pgtype.Time{Valid: false}, err
-	}
-	return pgTime, nil
+	// pgtype.Time stores microseconds since midnight
+	usec := int64(t.Hour())*3600_000_000 +
+		int64(t.Minute())*60_000_000 +
+		int64(t.Second())*1_000_000 +
+		int64(t.Nanosecond())/1000
+	return pgtype.Time{Microseconds: usec, Valid: true}, nil
 }
