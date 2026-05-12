@@ -12,7 +12,7 @@ go get github.com/transactrx/ras-utils
 
 ## rascache
 
-Generic in-memory key-value cache with TTL expiration and thread-safe operations. Supports both local time and UTC-based expiration.
+Generic in-memory key-value cache with TTL expiration and thread-safe operations. Supports both local time and UTC-based expiration via functional options.
 
 ```go
 import "github.com/transactrx/ras-utils/rascache"
@@ -21,12 +21,15 @@ import "github.com/transactrx/ras-utils/rascache"
 c := rascache.NewCache[string, User]()
 
 // Create a cache using UTC time for expiration
-c := rascache.NewCacheUTC[string, User]()
+c := rascache.NewCache[string, User](rascache.WithUTC())
 
 // Create a cache with background cleanup (removes expired items periodically)
-c := rascache.NewCacheWithCleanup[string, User](5 * time.Minute)
-c := rascache.NewCacheWithCleanupUTC[string, User](5 * time.Minute) // UTC variant
+c := rascache.NewCache[string, User](rascache.WithCleanup(5 * time.Minute))
 defer c.Stop() // stop the cleanup goroutine when done
+
+// Combine options
+c := rascache.NewCache[string, User](rascache.WithCleanup(5*time.Minute), rascache.WithUTC())
+defer c.Stop()
 
 // Set with TTL
 c.Set("user:123", user, 5*time.Minute)

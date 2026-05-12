@@ -81,52 +81,61 @@ type Cache[K comparable, T any] struct {
 	newItem func(T, time.Time) ICacheable[T] // factory for creating cache items
 }
 
+// cacheConfig holds configuration for a Cache instance.
+type cacheConfig struct {
+	useUTC          bool
+	cleanupInterval time.Duration
+}
+
+// CacheOption configures a Cache.
+type CacheOption func(*cacheConfig)
+
+// WithUTC configures the cache to use UTC time for expiration checks.
+func WithUTC() CacheOption {
+	return func(c *cacheConfig) {
+		c.useUTC = true
+	}
+}
+
+// WithCleanup configures the cache to run background cleanup at the given interval.
+func WithCleanup(interval time.Duration) CacheOption {
+	return func(c *cacheConfig) {
+		c.cleanupInterval = interval
+	}
+}
+
 // NewCache creates and initializes a new Cache instance.
-func NewCache[K comparable, T any]() *Cache[K, T] {
-	return &Cache[K, T]{
-		data: make(map[K]ICacheable[T]),
-		newItem: func(v T, exp time.Time) ICacheable[T] {
-			return &CacheItem[T]{value: v, expiry: exp}
-		},
+func NewCache[K comparable, T any](opts ...CacheOption) *Cache[K, T] {
+	cfg := &cacheConfig{}
+	for _, opt := range opts {
+		opt(cfg)
 	}
-}
 
-// NewCacheUTC creates a Cache that uses UTC time for expiration checks.
-func NewCacheUTC[K comparable, T any]() *Cache[K, T] {
-	return &Cache[K, T]{
+	c := &Cache[K, T]{
 		data: make(map[K]ICacheable[T]),
-		newItem: func(v T, exp time.Time) ICacheable[T] {
+	}
+
+	if cfg.useUTC {
+		c.newItem = func(v T, exp time.Time) ICacheable[T] {
 			return &CacheItemUTC[T]{value: v, expiry: exp}
-		},
+		}
+	} else {
+		c.newItem = func(v T, exp time.Time) ICacheable[T] {
+			return &CacheItem[T]{value: v, expiry: exp}
+		}
 	}
+
+	if cfg.cleanupInterval > 0 {
+		c.stopCh = make(chan struct{})
+		go c.startCleanup(cfg.cleanupInterval)
+	}
+
+	return c
 }
 
-// NewCacheWithCleanup creates a Cache with a background goroutine that
-// periodically removes expired items. Call Stop() to terminate the goroutine.
+// Deprecated: Use NewCache(WithCleanup(interval)) instead.
 func NewCacheWithCleanup[K comparable, T any](cleanupInterval time.Duration) *Cache[K, T] {
-	c := &Cache[K, T]{
-		data:   make(map[K]ICacheable[T]),
-		stopCh: make(chan struct{}),
-		newItem: func(v T, exp time.Time) ICacheable[T] {
-			return &CacheItem[T]{value: v, expiry: exp}
-		},
-	}
-	go c.startCleanup(cleanupInterval)
-	return c
-}
-
-// NewCacheWithCleanup creates a Cache with a background goroutine that
-// periodically removes expired items. Call Stop() to terminate the goroutine.
-func NewCacheWithCleanupUTC[K comparable, T any](cleanupInterval time.Duration) *Cache[K, T] {
-	c := &Cache[K, T]{
-		data:   make(map[K]ICacheable[T]),
-		stopCh: make(chan struct{}),
-		newItem: func(v T, exp time.Time) ICacheable[T] {
-			return &CacheItemUTC[T]{value: v, expiry: exp}
-		},
-	}
-	go c.startCleanup(cleanupInterval)
-	return c
+	return NewCache[K, T](WithCleanup(cleanupInterval))
 }
 
 // Stop terminates the background cleanup goroutine.
