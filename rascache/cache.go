@@ -81,10 +81,6 @@ type Cache[K comparable, T any] struct {
 	newItem func(T, time.Time) ICacheable[T] // factory for creating cache items
 }
 
-// StoreCacheOperation is a function that fetches a value to cache on miss.
-// Returns the cacheable item and true on success, or zero value and false on failure.
-type StoreCacheOperation[T any] func() (ICacheable[T], bool)
-
 // NewCache creates and initializes a new Cache instance.
 func NewCache[K comparable, T any]() *Cache[K, T] {
 	return &Cache[K, T]{
@@ -210,9 +206,24 @@ func (c *Cache[K, T]) Clear() {
 	c.data = make(map[K]ICacheable[T])
 }
 
-// Tries to get cached value, if not found, then runs storeCacheOperation function to get value that should be cached.
-func (c *Cache[K, T]) TryGet(key K, storeOperation StoreCacheOperation[T]) (T, bool) {
+// StoreCacheOperation is a function that fetches a value to cache on miss.
+// Returns the cacheable item and true on success, or zero value and false on failure.
+type StoreCacheOperation[T any] func() (CacheItem[T], bool)
 
+// StoreCacheOperation is a function that fetches a value to cache on miss.
+// Returns the cacheable item and true on success, or zero value and false on failure.
+type StoreCacheCallback[T any] func() (ICacheable[T], bool)
+
+// Deprecated: Use GetOrStore with StoreCacheCallback instead.
+func (c *Cache[K, T]) TryGet(key K, storeOperation StoreCacheOperation[T]) (T, bool) {
+	return c.GetOrStore(key, func() (ICacheable[T], bool) {
+		storeResult, successful := storeOperation()
+		return &storeResult, successful
+	})
+}
+
+// GetOrStore retrieves a cached value or fetches and stores it on miss.
+func (c *Cache[K, T]) GetOrStore(key K, storeOperation StoreCacheCallback[T]) (T, bool) {
 	if cachedValue, isCached := c.Get(key); isCached {
 		return cachedValue, true
 	}

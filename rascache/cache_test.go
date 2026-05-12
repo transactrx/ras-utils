@@ -97,14 +97,80 @@ func TestCache_Clear(t *testing.T) {
 	}
 }
 
+func TestCache_GetOrStore_CacheHit(t *testing.T) {
+	c := NewCache[string, string]()
+	c.Set("key", "cached_value", time.Hour)
+
+	callCount := 0
+	val, ok := c.GetOrStore("key", func() (ICacheable[string], bool) {
+		callCount++
+		return NewCacheItem("fetched_value", time.Now().Add(time.Hour)), true
+	})
+
+	if !ok {
+		t.Fatal("expected GetOrStore to succeed")
+	}
+	if val != "cached_value" {
+		t.Errorf("expected cached_value, got %s", val)
+	}
+	if callCount != 0 {
+		t.Errorf("expected store function not to be called on cache hit, called %d times", callCount)
+	}
+}
+
+func TestCache_GetOrStore_CacheMiss(t *testing.T) {
+	c := NewCache[string, string]()
+
+	callCount := 0
+	val, ok := c.GetOrStore("key", func() (ICacheable[string], bool) {
+		callCount++
+		return NewCacheItem("fetched_value", time.Now().Add(time.Hour)), true
+	})
+
+	if !ok {
+		t.Fatal("expected GetOrStore to succeed")
+	}
+	if val != "fetched_value" {
+		t.Errorf("expected fetched_value, got %s", val)
+	}
+	if callCount != 1 {
+		t.Errorf("expected store function to be called once, called %d times", callCount)
+	}
+
+	// Verify value is now cached
+	val, ok = c.Get("key")
+	if !ok {
+		t.Fatal("expected value to be cached after GetOrStore")
+	}
+	if val != "fetched_value" {
+		t.Errorf("expected fetched_value in cache, got %s", val)
+	}
+}
+
+func TestCache_GetOrStore_StoreOperationFails(t *testing.T) {
+	c := NewCache[string, string]()
+
+	val, ok := c.GetOrStore("key", func() (ICacheable[string], bool) {
+		return nil, false
+	})
+
+	if ok {
+		t.Fatal("expected GetOrStore to fail when store operation fails")
+	}
+	if val != "" {
+		t.Errorf("expected zero value, got %s", val)
+	}
+}
+
+// TestCache_TryGet_Deprecated tests the deprecated TryGet still works
 func TestCache_TryGet_CacheHit(t *testing.T) {
 	c := NewCache[string, string]()
 	c.Set("key", "cached_value", time.Hour)
 
 	callCount := 0
-	val, ok := c.TryGet("key", func() (ICacheable[string], bool) {
+	val, ok := c.TryGet("key", func() (CacheItem[string], bool) {
 		callCount++
-		return NewCacheItem("fetched_value", time.Now().Add(time.Hour)), true
+		return CacheItem[string]{value: "fetched_value", expiry: time.Now().Add(time.Hour)}, true
 	})
 
 	if !ok {
@@ -122,9 +188,9 @@ func TestCache_TryGet_CacheMiss(t *testing.T) {
 	c := NewCache[string, string]()
 
 	callCount := 0
-	val, ok := c.TryGet("key", func() (ICacheable[string], bool) {
+	val, ok := c.TryGet("key", func() (CacheItem[string], bool) {
 		callCount++
-		return NewCacheItem("fetched_value", time.Now().Add(time.Hour)), true
+		return CacheItem[string]{value: "fetched_value", expiry: time.Now().Add(time.Hour)}, true
 	})
 
 	if !ok {
@@ -150,8 +216,8 @@ func TestCache_TryGet_CacheMiss(t *testing.T) {
 func TestCache_TryGet_StoreOperationFails(t *testing.T) {
 	c := NewCache[string, string]()
 
-	val, ok := c.TryGet("key", func() (ICacheable[string], bool) {
-		return &CacheItem[string]{}, false
+	val, ok := c.TryGet("key", func() (CacheItem[string], bool) {
+		return CacheItem[string]{}, false
 	})
 
 	if ok {
@@ -408,11 +474,35 @@ func TestCacheItemUTC_getTtl(t *testing.T) {
 	}
 }
 
+func TestCacheUTC_GetOrStore(t *testing.T) {
+	c := NewCacheUTC[string, string]()
+
+	val, ok := c.GetOrStore("key", func() (ICacheable[string], bool) {
+		return NewCacheItemUTC("fetched", time.Now().UTC().Add(time.Hour)), true
+	})
+
+	if !ok {
+		t.Fatal("expected GetOrStore to succeed")
+	}
+	if val != "fetched" {
+		t.Errorf("expected 'fetched', got %s", val)
+	}
+
+	// Verify cached
+	val, ok = c.Get("key")
+	if !ok {
+		t.Fatal("expected value to be cached")
+	}
+	if val != "fetched" {
+		t.Errorf("expected 'fetched' in cache, got %s", val)
+	}
+}
+
 func TestCacheUTC_TryGet(t *testing.T) {
 	c := NewCacheUTC[string, string]()
 
-	val, ok := c.TryGet("key", func() (ICacheable[string], bool) {
-		return NewCacheItemUTC("fetched", time.Now().UTC().Add(time.Hour)), true
+	val, ok := c.TryGet("key", func() (CacheItem[string], bool) {
+		return CacheItem[string]{value: "fetched", expiry: time.Now().UTC().Add(time.Hour)}, true
 	})
 
 	if !ok {
