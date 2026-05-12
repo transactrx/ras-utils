@@ -102,7 +102,7 @@ func TestCache_TryGet_CacheHit(t *testing.T) {
 	c.Set("key", "cached_value", time.Hour)
 
 	callCount := 0
-	val, ok := c.TryGet("key", func() (CacheItem[string], bool) {
+	val, ok := c.TryGet("key", func() (ICacheable[string], bool) {
 		callCount++
 		return NewCacheItem("fetched_value", time.Now().Add(time.Hour)), true
 	})
@@ -122,7 +122,7 @@ func TestCache_TryGet_CacheMiss(t *testing.T) {
 	c := NewCache[string, string]()
 
 	callCount := 0
-	val, ok := c.TryGet("key", func() (CacheItem[string], bool) {
+	val, ok := c.TryGet("key", func() (ICacheable[string], bool) {
 		callCount++
 		return NewCacheItem("fetched_value", time.Now().Add(time.Hour)), true
 	})
@@ -150,8 +150,8 @@ func TestCache_TryGet_CacheMiss(t *testing.T) {
 func TestCache_TryGet_StoreOperationFails(t *testing.T) {
 	c := NewCache[string, string]()
 
-	val, ok := c.TryGet("key", func() (CacheItem[string], bool) {
-		return CacheItem[string]{}, false
+	val, ok := c.TryGet("key", func() (ICacheable[string], bool) {
+		return &CacheItem[string]{}, false
 	})
 
 	if ok {
@@ -184,11 +184,11 @@ func TestNewCacheItem(t *testing.T) {
 	expiry := time.Now().Add(time.Hour)
 	item := NewCacheItem("test", expiry)
 
-	if item.value != "test" {
-		t.Errorf("expected value 'test', got %s", item.value)
+	if item.getValue() != "test" {
+		t.Errorf("expected value 'test', got %s", item.getValue())
 	}
-	if !item.expiry.Equal(expiry) {
-		t.Errorf("expected expiry %v, got %v", expiry, item.expiry)
+	if !item.getExpiration().Equal(expiry) {
+		t.Errorf("expected expiry %v, got %v", expiry, item.getExpiration())
 	}
 }
 
@@ -293,10 +293,10 @@ func TestCache_DeleteExpired(t *testing.T) {
 
 	// Add mix of expired and valid items
 	c.mu.Lock()
-	c.data["expired1"] = CacheItem[string]{value: "v1", expiry: time.Now().Add(-time.Hour)}
-	c.data["expired2"] = CacheItem[string]{value: "v2", expiry: time.Now().Add(-time.Minute)}
-	c.data["valid1"] = CacheItem[string]{value: "v3", expiry: time.Now().Add(time.Hour)}
-	c.data["valid2"] = CacheItem[string]{value: "v4", expiry: time.Now().Add(time.Minute)}
+	c.data["expired1"] = &CacheItem[string]{value: "v1", expiry: time.Now().Add(-time.Hour)}
+	c.data["expired2"] = &CacheItem[string]{value: "v2", expiry: time.Now().Add(-time.Minute)}
+	c.data["valid1"] = &CacheItem[string]{value: "v3", expiry: time.Now().Add(time.Hour)}
+	c.data["valid2"] = &CacheItem[string]{value: "v4", expiry: time.Now().Add(time.Minute)}
 	c.mu.Unlock()
 
 	c.deleteExpired()
@@ -336,4 +336,147 @@ func TestCacheWithCleanup_ConcurrentAccess(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestNewCacheUTC(t *testing.T) {
+	c := NewCacheUTC[string, int]()
+	if c == nil {
+		t.Fatal("NewCacheUTC returned nil")
+	}
+	if c.data == nil {
+		t.Fatal("NewCacheUTC did not initialize data map")
+	}
+}
+
+func TestCacheUTC_SetAndGet(t *testing.T) {
+	c := NewCacheUTC[string, string]()
+
+	c.Set("key1", "value1", time.Hour)
+
+	val, ok := c.Get("key1")
+	if !ok {
+		t.Fatal("expected key1 to exist")
+	}
+	if val != "value1" {
+		t.Errorf("expected value1, got %s", val)
+	}
+}
+
+func TestCacheUTC_Expiry(t *testing.T) {
+	c := NewCacheUTC[string, string]()
+
+	c.Set("expires", "soon", 10*time.Millisecond)
+
+	val, ok := c.Get("expires")
+	if !ok {
+		t.Fatal("expected key to exist before expiry")
+	}
+	if val != "soon" {
+		t.Errorf("expected 'soon', got %s", val)
+	}
+
+	time.Sleep(20 * time.Millisecond)
+
+	val, ok = c.Get("expires")
+	if ok {
+		t.Fatal("expected key to be expired")
+	}
+	if val != "" {
+		t.Errorf("expected zero value after expiry, got %s", val)
+	}
+}
+
+func TestNewCacheItemUTC(t *testing.T) {
+	expiry := time.Now().UTC().Add(time.Hour)
+	item := NewCacheItemUTC("test", expiry)
+
+	if item.getValue() != "test" {
+		t.Errorf("expected value 'test', got %s", item.getValue())
+	}
+	if !item.getExpiration().Equal(expiry) {
+		t.Errorf("expected expiry %v, got %v", expiry, item.getExpiration())
+	}
+}
+
+func TestCacheItemUTC_getTtl(t *testing.T) {
+	expiry := time.Now().UTC().Add(time.Hour)
+	item := NewCacheItemUTC("test", expiry)
+
+	ttl := item.getTtl()
+	if ttl < 59*time.Minute || ttl > time.Hour {
+		t.Errorf("expected TTL around 1 hour, got %v", ttl)
+	}
+}
+
+func TestCacheUTC_TryGet(t *testing.T) {
+	c := NewCacheUTC[string, string]()
+
+	val, ok := c.TryGet("key", func() (ICacheable[string], bool) {
+		return NewCacheItemUTC("fetched", time.Now().UTC().Add(time.Hour)), true
+	})
+
+	if !ok {
+		t.Fatal("expected TryGet to succeed")
+	}
+	if val != "fetched" {
+		t.Errorf("expected 'fetched', got %s", val)
+	}
+
+	// Verify cached
+	val, ok = c.Get("key")
+	if !ok {
+		t.Fatal("expected value to be cached")
+	}
+	if val != "fetched" {
+		t.Errorf("expected 'fetched' in cache, got %s", val)
+	}
+}
+
+func TestNewCacheWithCleanupUTC(t *testing.T) {
+	c := NewCacheWithCleanupUTC[string, string](50 * time.Millisecond)
+	defer c.Stop()
+
+	if c == nil {
+		t.Fatal("NewCacheWithCleanupUTC returned nil")
+	}
+	if c.data == nil {
+		t.Fatal("NewCacheWithCleanupUTC did not initialize data map")
+	}
+	if c.stopCh == nil {
+		t.Fatal("NewCacheWithCleanupUTC did not initialize stopCh")
+	}
+}
+
+func TestCacheWithCleanupUTC_BackgroundCleanup(t *testing.T) {
+	c := NewCacheWithCleanupUTC[string, string](50 * time.Millisecond)
+	defer c.Stop()
+
+	c.Set("expires1", "value1", 20*time.Millisecond)
+	c.Set("expires2", "value2", 20*time.Millisecond)
+	c.Set("stays", "value3", time.Hour)
+
+	if _, ok := c.Get("expires1"); !ok {
+		t.Fatal("expected expires1 to exist initially")
+	}
+	if _, ok := c.Get("expires2"); !ok {
+		t.Fatal("expected expires2 to exist initially")
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	c.mu.RLock()
+	_, exists1 := c.data["expires1"]
+	_, exists2 := c.data["expires2"]
+	_, exists3 := c.data["stays"]
+	c.mu.RUnlock()
+
+	if exists1 {
+		t.Error("expected expires1 to be cleaned up")
+	}
+	if exists2 {
+		t.Error("expected expires2 to be cleaned up")
+	}
+	if !exists3 {
+		t.Error("expected stays to still exist")
+	}
 }
