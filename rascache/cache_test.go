@@ -16,6 +16,66 @@ func TestNewCache(t *testing.T) {
 	}
 }
 
+func TestNewCache_WithUTC(t *testing.T) {
+	c := NewCache[string, string](WithUTC())
+	if c == nil {
+		t.Fatal("NewCache with WithUTC returned nil")
+	}
+
+	c.Set("key", "value", time.Hour)
+	val, ok := c.Get("key")
+	if !ok {
+		t.Fatal("expected key to exist")
+	}
+	if val != "value" {
+		t.Errorf("expected 'value', got %s", val)
+	}
+}
+
+func TestNewCache_WithCleanup(t *testing.T) {
+	c := NewCache[string, string](WithCleanup(50 * time.Millisecond))
+	defer c.Stop()
+
+	if c.stopCh == nil {
+		t.Fatal("expected stopCh to be initialized with WithCleanup")
+	}
+
+	c.Set("expires", "soon", 20*time.Millisecond)
+	c.Set("stays", "longer", time.Hour)
+
+	time.Sleep(100 * time.Millisecond)
+
+	c.mu.RLock()
+	_, expiresExists := c.data["expires"]
+	_, staysExists := c.data["stays"]
+	c.mu.RUnlock()
+
+	if expiresExists {
+		t.Error("expected 'expires' to be cleaned up")
+	}
+	if !staysExists {
+		t.Error("expected 'stays' to still exist")
+	}
+}
+
+func TestNewCache_WithCleanupAndUTC(t *testing.T) {
+	c := NewCache[string, string](WithCleanup(50*time.Millisecond), WithUTC())
+	defer c.Stop()
+
+	if c.stopCh == nil {
+		t.Fatal("expected stopCh to be initialized")
+	}
+
+	c.Set("key", "value", time.Hour)
+	val, ok := c.Get("key")
+	if !ok {
+		t.Fatal("expected key to exist")
+	}
+	if val != "value" {
+		t.Errorf("expected 'value', got %s", val)
+	}
+}
+
 func TestCache_SetAndGet(t *testing.T) {
 	c := NewCache[string, string]()
 
@@ -97,6 +157,72 @@ func TestCache_Clear(t *testing.T) {
 	}
 }
 
+func TestCache_GetOrStore_CacheHit(t *testing.T) {
+	c := NewCache[string, string]()
+	c.Set("key", "cached_value", time.Hour)
+
+	callCount := 0
+	val, ok := c.GetOrStore("key", func() (ICacheable[string], bool) {
+		callCount++
+		return NewCacheItem("fetched_value", time.Now().Add(time.Hour)), true
+	})
+
+	if !ok {
+		t.Fatal("expected GetOrStore to succeed")
+	}
+	if val != "cached_value" {
+		t.Errorf("expected cached_value, got %s", val)
+	}
+	if callCount != 0 {
+		t.Errorf("expected store function not to be called on cache hit, called %d times", callCount)
+	}
+}
+
+func TestCache_GetOrStore_CacheMiss(t *testing.T) {
+	c := NewCache[string, string]()
+
+	callCount := 0
+	val, ok := c.GetOrStore("key", func() (ICacheable[string], bool) {
+		callCount++
+		return NewCacheItem("fetched_value", time.Now().Add(time.Hour)), true
+	})
+
+	if !ok {
+		t.Fatal("expected GetOrStore to succeed")
+	}
+	if val != "fetched_value" {
+		t.Errorf("expected fetched_value, got %s", val)
+	}
+	if callCount != 1 {
+		t.Errorf("expected store function to be called once, called %d times", callCount)
+	}
+
+	// Verify value is now cached
+	val, ok = c.Get("key")
+	if !ok {
+		t.Fatal("expected value to be cached after GetOrStore")
+	}
+	if val != "fetched_value" {
+		t.Errorf("expected fetched_value in cache, got %s", val)
+	}
+}
+
+func TestCache_GetOrStore_StoreOperationFails(t *testing.T) {
+	c := NewCache[string, string]()
+
+	val, ok := c.GetOrStore("key", func() (ICacheable[string], bool) {
+		return nil, false
+	})
+
+	if ok {
+		t.Fatal("expected GetOrStore to fail when store operation fails")
+	}
+	if val != "" {
+		t.Errorf("expected zero value, got %s", val)
+	}
+}
+
+// TestCache_TryGet_Deprecated tests the deprecated TryGet still works
 func TestCache_TryGet_CacheHit(t *testing.T) {
 	c := NewCache[string, string]()
 	c.Set("key", "cached_value", time.Hour)
@@ -104,7 +230,7 @@ func TestCache_TryGet_CacheHit(t *testing.T) {
 	callCount := 0
 	val, ok := c.TryGet("key", func() (CacheItem[string], bool) {
 		callCount++
-		return NewCacheItem("fetched_value", time.Now().Add(time.Hour)), true
+		return CacheItem[string]{value: "fetched_value", expiry: time.Now().Add(time.Hour)}, true
 	})
 
 	if !ok {
@@ -124,7 +250,7 @@ func TestCache_TryGet_CacheMiss(t *testing.T) {
 	callCount := 0
 	val, ok := c.TryGet("key", func() (CacheItem[string], bool) {
 		callCount++
-		return NewCacheItem("fetched_value", time.Now().Add(time.Hour)), true
+		return CacheItem[string]{value: "fetched_value", expiry: time.Now().Add(time.Hour)}, true
 	})
 
 	if !ok {
@@ -184,11 +310,11 @@ func TestNewCacheItem(t *testing.T) {
 	expiry := time.Now().Add(time.Hour)
 	item := NewCacheItem("test", expiry)
 
-	if item.value != "test" {
-		t.Errorf("expected value 'test', got %s", item.value)
+	if item.getValue() != "test" {
+		t.Errorf("expected value 'test', got %s", item.getValue())
 	}
-	if !item.expiry.Equal(expiry) {
-		t.Errorf("expected expiry %v, got %v", expiry, item.expiry)
+	if !item.getExpiration().Equal(expiry) {
+		t.Errorf("expected expiry %v, got %v", expiry, item.getExpiration())
 	}
 }
 
@@ -293,10 +419,10 @@ func TestCache_DeleteExpired(t *testing.T) {
 
 	// Add mix of expired and valid items
 	c.mu.Lock()
-	c.data["expired1"] = CacheItem[string]{value: "v1", expiry: time.Now().Add(-time.Hour)}
-	c.data["expired2"] = CacheItem[string]{value: "v2", expiry: time.Now().Add(-time.Minute)}
-	c.data["valid1"] = CacheItem[string]{value: "v3", expiry: time.Now().Add(time.Hour)}
-	c.data["valid2"] = CacheItem[string]{value: "v4", expiry: time.Now().Add(time.Minute)}
+	c.data["expired1"] = &CacheItem[string]{value: "v1", expiry: time.Now().Add(-time.Hour)}
+	c.data["expired2"] = &CacheItem[string]{value: "v2", expiry: time.Now().Add(-time.Minute)}
+	c.data["valid1"] = &CacheItem[string]{value: "v3", expiry: time.Now().Add(time.Hour)}
+	c.data["valid2"] = &CacheItem[string]{value: "v4", expiry: time.Now().Add(time.Minute)}
 	c.mu.Unlock()
 
 	c.deleteExpired()
@@ -336,4 +462,26 @@ func TestCacheWithCleanup_ConcurrentAccess(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestNewCacheItemUTC(t *testing.T) {
+	expiry := time.Now().UTC().Add(time.Hour)
+	item := NewCacheItemUTC("test", expiry)
+
+	if item.getValue() != "test" {
+		t.Errorf("expected value 'test', got %s", item.getValue())
+	}
+	if !item.getExpiration().Equal(expiry) {
+		t.Errorf("expected expiry %v, got %v", expiry, item.getExpiration())
+	}
+}
+
+func TestCacheItemUTC_getTtl(t *testing.T) {
+	expiry := time.Now().UTC().Add(time.Hour)
+	item := NewCacheItemUTC("test", expiry)
+
+	ttl := item.getTtl()
+	if ttl < 59*time.Minute || ttl > time.Hour {
+		t.Errorf("expected TTL around 1 hour, got %v", ttl)
+	}
 }
