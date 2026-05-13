@@ -217,6 +217,7 @@ func (c *Cache[K, T]) Clear() {
 
 // StoreCacheOperation is a function that fetches a value to cache on miss.
 // Returns the cacheable item and true on success, or zero value and false on failure.
+// Deprecated: Use GetOrStore with StoreCacheCallback instead.
 type StoreCacheOperation[T any] func() (CacheItem[T], bool)
 
 // StoreCacheOperation is a function that fetches a value to cache on miss.
