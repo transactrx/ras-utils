@@ -171,11 +171,11 @@ func (c *Cache[K, T]) deleteExpired() {
 	}
 }
 
-// Set adds or updates a key-value pair in the cache with the given TTL.
-func (c *Cache[K, T]) Set(key K, value T, ttl time.Duration) {
+// Set adds or updates a key-value pair in the cache with the given expiration.
+func (c *Cache[K, T]) Set(key K, value T, expiresOn time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.data[key] = c.newItem(value, time.Now().Add(ttl))
+	c.data[key] = c.newItem(value, expiresOn)
 }
 
 func zeroVal[T any]() T {
@@ -221,14 +221,14 @@ func (c *Cache[K, T]) Clear() {
 type StoreCacheOperation[T any] func() (CacheItem[T], bool)
 
 // StoreCacheOperation is a function that fetches a value to cache on miss.
-// Returns the cacheable item and true on success, or zero value and false on failure.
-type StoreCacheCallback[T any] func() (ICacheable[T], bool)
+// Returns the cacheable item, expiration, and true on success, or zero value, zero value and false on failure.
+type StoreCacheCallback[T any] func() (T, time.Time, bool)
 
 // Deprecated: Use GetOrStore with StoreCacheCallback instead.
 func (c *Cache[K, T]) TryGet(key K, storeOperation StoreCacheOperation[T]) (T, bool) {
-	return c.GetOrStore(key, func() (ICacheable[T], bool) {
+	return c.GetOrStore(key, func() (T, time.Time, bool) {
 		storeResult, successful := storeOperation()
-		return &storeResult, successful
+		return storeResult.getValue(), storeResult.getExpiration(), successful
 	})
 }
 
@@ -238,9 +238,9 @@ func (c *Cache[K, T]) GetOrStore(key K, storeOperation StoreCacheCallback[T]) (T
 		return cachedValue, true
 	}
 
-	if newValue, successful := storeOperation(); successful {
-		c.Set(key, newValue.getValue(), newValue.getTtl())
-		return newValue.getValue(), true
+	if newValue, expiration, successful := storeOperation(); successful {
+		c.Set(key, newValue, expiration)
+		return newValue, true
 	}
 
 	return zeroVal[T](), false

@@ -31,20 +31,19 @@ defer c.Stop() // stop the cleanup goroutine when done
 c := rascache.NewCache[string, User](rascache.WithCleanup(5*time.Minute), rascache.WithUTC())
 defer c.Stop()
 
-// Set with TTL
-c.Set("user:123", user, 5*time.Minute)
+// Set with expiration time (assumes server time or UTC depending on cache init options)
+c.Set("user:123", user, time.Now().Add(5*time.Minute))
 
 // Get (returns zero value and false if expired/missing)
 user, ok := c.Get("user:123")
 
 // Cache-through pattern: fetch from source if not cached
-user, ok := c.GetOrStore("user:123", func() (rascache.ICacheable[User], bool) {
+user, ok := c.GetOrStore("user:123", func() (User, time.Time, bool) {
     user, err := db.GetUser(123)
     if err != nil {
-        return nil, false
+        return User{}, time.Time{}, false
     }
-    // Use NewCacheItem for local time, NewCacheItemUTC for UTC
-    return rascache.NewCacheItem(user, time.Now().Add(5*time.Minute)), true
+    return user, time.Now().Add(5*time.Minute), true
 })
 
 // Delete and Clear
