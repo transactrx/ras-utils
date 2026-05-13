@@ -22,7 +22,7 @@ func TestNewCache_WithUTC(t *testing.T) {
 		t.Fatal("NewCache with WithUTC returned nil")
 	}
 
-	c.Set("key", "value", time.Hour)
+	c.Set("key", "value", time.Now().UTC().Add(time.Hour))
 	val, ok := c.Get("key")
 	if !ok {
 		t.Fatal("expected key to exist")
@@ -40,8 +40,8 @@ func TestNewCache_WithCleanup(t *testing.T) {
 		t.Fatal("expected stopCh to be initialized with WithCleanup")
 	}
 
-	c.Set("expires", "soon", 20*time.Millisecond)
-	c.Set("stays", "longer", time.Hour)
+	c.Set("expires", "soon", time.Now().Add(20*time.Millisecond))
+	c.Set("stays", "longer", time.Now().Add(time.Hour))
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -66,7 +66,7 @@ func TestNewCache_WithCleanupAndUTC(t *testing.T) {
 		t.Fatal("expected stopCh to be initialized")
 	}
 
-	c.Set("key", "value", time.Hour)
+	c.Set("key", "value", time.Now().UTC().Add(time.Hour))
 	val, ok := c.Get("key")
 	if !ok {
 		t.Fatal("expected key to exist")
@@ -79,7 +79,7 @@ func TestNewCache_WithCleanupAndUTC(t *testing.T) {
 func TestCache_SetAndGet(t *testing.T) {
 	c := NewCache[string, string]()
 
-	c.Set("key1", "value1", time.Hour)
+	c.Set("key1", "value1", time.Now().Add(time.Hour))
 
 	val, ok := c.Get("key1")
 	if !ok {
@@ -105,7 +105,7 @@ func TestCache_GetNonExistent(t *testing.T) {
 func TestCache_Expiry(t *testing.T) {
 	c := NewCache[string, string]()
 
-	c.Set("expires", "soon", 10*time.Millisecond)
+	c.Set("expires", "soon", time.Now().Add(10*time.Millisecond))
 
 	// Should exist immediately
 	val, ok := c.Get("expires")
@@ -132,7 +132,7 @@ func TestCache_Expiry(t *testing.T) {
 func TestCache_Delete(t *testing.T) {
 	c := NewCache[string, string]()
 
-	c.Set("key", "value", time.Hour)
+	c.Set("key", "value", time.Now().Add(time.Hour))
 	c.Delete("key")
 
 	_, ok := c.Get("key")
@@ -144,9 +144,9 @@ func TestCache_Delete(t *testing.T) {
 func TestCache_Clear(t *testing.T) {
 	c := NewCache[string, string]()
 
-	c.Set("key1", "value1", time.Hour)
-	c.Set("key2", "value2", time.Hour)
-	c.Set("key3", "value3", time.Hour)
+	c.Set("key1", "value1", time.Now().Add(time.Hour))
+	c.Set("key2", "value2", time.Now().Add(time.Hour))
+	c.Set("key3", "value3", time.Now().Add(time.Hour))
 
 	c.Clear()
 
@@ -159,12 +159,12 @@ func TestCache_Clear(t *testing.T) {
 
 func TestCache_GetOrStore_CacheHit(t *testing.T) {
 	c := NewCache[string, string]()
-	c.Set("key", "cached_value", time.Hour)
+	c.Set("key", "cached_value", time.Now().Add(time.Hour))
 
 	callCount := 0
-	val, ok := c.GetOrStore("key", func() (ICacheable[string], bool) {
+	val, ok := c.GetOrStore("key", func() (string, time.Time, bool) {
 		callCount++
-		return NewCacheItem("fetched_value", time.Now().Add(time.Hour)), true
+		return "fetched_value", time.Now().Add(time.Hour), true
 	})
 
 	if !ok {
@@ -182,9 +182,9 @@ func TestCache_GetOrStore_CacheMiss(t *testing.T) {
 	c := NewCache[string, string]()
 
 	callCount := 0
-	val, ok := c.GetOrStore("key", func() (ICacheable[string], bool) {
+	val, ok := c.GetOrStore("key", func() (string, time.Time, bool) {
 		callCount++
-		return NewCacheItem("fetched_value", time.Now().Add(time.Hour)), true
+		return "fetched_value", time.Now().Add(time.Hour), true
 	})
 
 	if !ok {
@@ -210,8 +210,8 @@ func TestCache_GetOrStore_CacheMiss(t *testing.T) {
 func TestCache_GetOrStore_StoreOperationFails(t *testing.T) {
 	c := NewCache[string, string]()
 
-	val, ok := c.GetOrStore("key", func() (ICacheable[string], bool) {
-		return nil, false
+	val, ok := c.GetOrStore("key", func() (string, time.Time, bool) {
+		return "", time.Time{}, false
 	})
 
 	if ok {
@@ -225,7 +225,7 @@ func TestCache_GetOrStore_StoreOperationFails(t *testing.T) {
 // TestCache_TryGet_Deprecated tests the deprecated TryGet still works
 func TestCache_TryGet_CacheHit(t *testing.T) {
 	c := NewCache[string, string]()
-	c.Set("key", "cached_value", time.Hour)
+	c.Set("key", "cached_value", time.Now().Add(time.Hour))
 
 	callCount := 0
 	val, ok := c.TryGet("key", func() (CacheItem[string], bool) {
@@ -297,7 +297,7 @@ func TestCache_ConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
-			c.Set(n, n*2, time.Hour)
+			c.Set(n, n*2, time.Now().Add(time.Hour))
 			c.Get(n)
 			c.Delete(n)
 		}(i)
@@ -338,9 +338,9 @@ func TestCacheWithCleanup_BackgroundCleanup(t *testing.T) {
 	defer c.Stop()
 
 	// Add items with short TTL
-	c.Set("expires1", "value1", 20*time.Millisecond)
-	c.Set("expires2", "value2", 20*time.Millisecond)
-	c.Set("stays", "value3", time.Hour)
+	c.Set("expires1", "value1", time.Now().Add(20*time.Millisecond))
+	c.Set("expires2", "value2", time.Now().Add(20*time.Millisecond))
+	c.Set("stays", "value3", time.Now().Add(time.Hour))
 
 	// Verify items exist
 	if _, ok := c.Get("expires1"); !ok {
@@ -376,7 +376,7 @@ func TestCache_Stop(t *testing.T) {
 		c := NewCacheWithCleanup[string, string](10 * time.Millisecond)
 
 		// Add item that would expire
-		c.Set("key", "value", 5*time.Millisecond)
+		c.Set("key", "value", time.Now().Add(5*time.Millisecond))
 
 		// Stop the cleanup
 		c.Stop()
@@ -455,7 +455,7 @@ func TestCacheWithCleanup_ConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
-			c.Set(n, n*2, 50*time.Millisecond)
+			c.Set(n, n*2, time.Now().Add(50*time.Millisecond))
 			c.Get(n)
 			c.Delete(n)
 		}(i)
