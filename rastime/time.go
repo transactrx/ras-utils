@@ -181,6 +181,7 @@ func (tr TimeRange) Duration() time.Duration {
 	return time.Duration(minutes) * time.Minute
 }
 
+// Overlaps returns true if this range overlaps with any range in the provided slice
 func (tr TimeRange) Overlaps(trs []TimeRange) bool {
 	for _, item := range trs {
 		// Two ranges overlap if one starts before the other ends AND ends after the other starts

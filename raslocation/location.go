@@ -228,6 +228,7 @@ func (lh LocationHours) Merge(override LocationHours) LocationHours {
 	return result
 }
 
+// NewDefaultLocationHours creates a LocationHours with the same hours for all 7 days
 func NewDefaultLocationHours(isOpen bool, start rastime.TimeOfDay, end rastime.TimeOfDay) LocationHours {
 	return LocationHours{
 		{DayOfWeek: 0, IsOpen: isOpen, TimeRanges: []rastime.TimeRange{{Start: start, End: end}}},
