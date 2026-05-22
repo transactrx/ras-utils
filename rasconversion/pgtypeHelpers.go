@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/transactrx/ras-utils/rastime"
 )
 
 func ConvertToPgtypeString(s *string) pgtype.Text {
@@ -202,4 +203,23 @@ func TryConvertToPgtypeTime(t *time.Time) (pgtype.Time, error) {
 		int64(t.Second())*1_000_000 +
 		int64(t.Nanosecond())/1000
 	return pgtype.Time{Microseconds: usec, Valid: true}, nil
+}
+
+func ConvertTimeOfDayToPgtypeTime(t *rastime.TimeOfDay) pgtype.Time {
+	if t == nil {
+		return pgtype.Time{Valid: false}
+	}
+	usec := int64(t.Hour)*3600_000_000 + int64(t.Minute)*60_000_000
+	return pgtype.Time{Microseconds: usec, Valid: true}
+}
+
+func ConvertPgtypeTimeToTimeOfDay(t pgtype.Time) *rastime.TimeOfDay {
+	if !t.Valid {
+		return nil
+	}
+	totalMinutes := t.Microseconds / 60_000_000
+	return &rastime.TimeOfDay{
+		Hour:   int(totalMinutes / 60),
+		Minute: int(totalMinutes % 60),
+	}
 }
