@@ -1,3 +1,11 @@
+// Package rasconversion provides type conversion helpers for PostgreSQL using pgx/pgtype.
+//
+// It converts nullable Go types (*string, *int64, *time.Time, etc.) to their pgtype
+// equivalents (pgtype.Text, pgtype.Int8, pgtype.Timestamp, etc.) with proper null handling.
+//
+// Two variants are provided for each conversion:
+//   - ConvertTo* functions log errors and return invalid pgtypes on failure
+//   - TryConvertTo* functions return errors for explicit error handling
 package rasconversion
 
 import (
@@ -5,8 +13,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/transactrx/ras-utils/rastime"
 )
 
+// ConvertToPgtypeString converts a nullable string to pgtype.Text. Returns invalid if nil or on error.
 func ConvertToPgtypeString(s *string) pgtype.Text {
 	var pgString pgtype.Text
 	if s != nil {
@@ -21,6 +31,7 @@ func ConvertToPgtypeString(s *string) pgtype.Text {
 	return pgString
 }
 
+// ConvertToPgtypeInt8 converts a nullable int64 to pgtype.Int8. Returns invalid if nil or on error.
 func ConvertToPgtypeInt8(i *int64) pgtype.Int8 {
 	var pgInt8 pgtype.Int8
 	if i != nil {
@@ -35,6 +46,7 @@ func ConvertToPgtypeInt8(i *int64) pgtype.Int8 {
 	return pgInt8
 }
 
+// ConvertToPgtypeInt2 converts a nullable int32 to pgtype.Int2. Returns invalid if nil.
 func ConvertToPgtypeInt2(i *int32) pgtype.Int2 {
 	if i != nil {
 		// Directly construct pgtype.Int2 with int16 value
@@ -46,6 +58,7 @@ func ConvertToPgtypeInt2(i *int32) pgtype.Int2 {
 	return pgtype.Int2{Valid: false}
 }
 
+// ConvertToPgtypeBool converts a nullable bool to pgtype.Bool. Returns invalid if nil or on error.
 func ConvertToPgtypeBool(b *bool) pgtype.Bool {
 	var pgBool pgtype.Bool
 	if b != nil {
@@ -60,6 +73,7 @@ func ConvertToPgtypeBool(b *bool) pgtype.Bool {
 	return pgBool
 }
 
+// ConvertToPgtypeTimestamp converts a nullable time.Time to pgtype.Timestamp. Returns invalid if nil or on error.
 func ConvertToPgtypeTimestamp(t *time.Time) pgtype.Timestamp {
 	var pgTime pgtype.Timestamp
 	if t != nil {
@@ -74,6 +88,7 @@ func ConvertToPgtypeTimestamp(t *time.Time) pgtype.Timestamp {
 	return pgTime
 }
 
+// ConvertToPgtypeTimestamptz converts a nullable time.Time to pgtype.Timestamptz. Returns invalid if nil or on error.
 func ConvertToPgtypeTimestamptz(t *time.Time) pgtype.Timestamptz {
 	var pgTimez pgtype.Timestamptz
 	if t != nil {
@@ -88,6 +103,7 @@ func ConvertToPgtypeTimestamptz(t *time.Time) pgtype.Timestamptz {
 	return pgTimez
 }
 
+// ConvertToPgtypeDate converts a nullable time.Time to pgtype.Date. Returns invalid if nil or on error.
 func ConvertToPgtypeDate(d *time.Time) pgtype.Date {
 	var pgDate pgtype.Date
 	if d != nil {
@@ -102,6 +118,7 @@ func ConvertToPgtypeDate(d *time.Time) pgtype.Date {
 	return pgDate
 }
 
+// ConvertToPgtypeTime converts a nullable time.Time to pgtype.Time (time of day). Returns invalid if nil.
 func ConvertToPgtypeTime(t *time.Time) pgtype.Time {
 	if t == nil {
 		return pgtype.Time{Valid: false}
@@ -116,6 +133,7 @@ func ConvertToPgtypeTime(t *time.Time) pgtype.Time {
 
 // Error-returning variants for callers that need explicit error handling
 
+// TryConvertToPgtypeString converts a nullable string to pgtype.Text, returning an error on failure.
 func TryConvertToPgtypeString(s *string) (pgtype.Text, error) {
 	if s == nil {
 		return pgtype.Text{Valid: false}, nil
@@ -127,6 +145,7 @@ func TryConvertToPgtypeString(s *string) (pgtype.Text, error) {
 	return pgString, nil
 }
 
+// TryConvertToPgtypeInt8 converts a nullable int64 to pgtype.Int8, returning an error on failure.
 func TryConvertToPgtypeInt8(i *int64) (pgtype.Int8, error) {
 	if i == nil {
 		return pgtype.Int8{Valid: false}, nil
@@ -138,6 +157,7 @@ func TryConvertToPgtypeInt8(i *int64) (pgtype.Int8, error) {
 	return pgInt8, nil
 }
 
+// TryConvertToPgtypeInt2 converts a nullable int32 to pgtype.Int2, returning an error on failure.
 func TryConvertToPgtypeInt2(i *int32) (pgtype.Int2, error) {
 	if i == nil {
 		return pgtype.Int2{Valid: false}, nil
@@ -148,6 +168,7 @@ func TryConvertToPgtypeInt2(i *int32) (pgtype.Int2, error) {
 	}, nil
 }
 
+// TryConvertToPgtypeBool converts a nullable bool to pgtype.Bool, returning an error on failure.
 func TryConvertToPgtypeBool(b *bool) (pgtype.Bool, error) {
 	if b == nil {
 		return pgtype.Bool{Valid: false}, nil
@@ -159,6 +180,7 @@ func TryConvertToPgtypeBool(b *bool) (pgtype.Bool, error) {
 	return pgBool, nil
 }
 
+// TryConvertToPgtypeTimestamp converts a nullable time.Time to pgtype.Timestamp, returning an error on failure.
 func TryConvertToPgtypeTimestamp(t *time.Time) (pgtype.Timestamp, error) {
 	if t == nil {
 		return pgtype.Timestamp{Valid: false}, nil
@@ -170,6 +192,7 @@ func TryConvertToPgtypeTimestamp(t *time.Time) (pgtype.Timestamp, error) {
 	return pgTime, nil
 }
 
+// TryConvertToPgtypeTimestamptz converts a nullable time.Time to pgtype.Timestamptz, returning an error on failure.
 func TryConvertToPgtypeTimestamptz(t *time.Time) (pgtype.Timestamptz, error) {
 	if t == nil {
 		return pgtype.Timestamptz{Valid: false}, nil
@@ -181,6 +204,7 @@ func TryConvertToPgtypeTimestamptz(t *time.Time) (pgtype.Timestamptz, error) {
 	return pgTimez, nil
 }
 
+// TryConvertToPgtypeDate converts a nullable time.Time to pgtype.Date, returning an error on failure.
 func TryConvertToPgtypeDate(d *time.Time) (pgtype.Date, error) {
 	if d == nil {
 		return pgtype.Date{Valid: false}, nil
@@ -192,6 +216,7 @@ func TryConvertToPgtypeDate(d *time.Time) (pgtype.Date, error) {
 	return pgDate, nil
 }
 
+// TryConvertToPgtypeTime converts a nullable time.Time to pgtype.Time, returning an error on failure.
 func TryConvertToPgtypeTime(t *time.Time) (pgtype.Time, error) {
 	if t == nil {
 		return pgtype.Time{Valid: false}, nil
@@ -202,4 +227,25 @@ func TryConvertToPgtypeTime(t *time.Time) (pgtype.Time, error) {
 		int64(t.Second())*1_000_000 +
 		int64(t.Nanosecond())/1000
 	return pgtype.Time{Microseconds: usec, Valid: true}, nil
+}
+
+// ConvertTimeOfDayToPgtypeTime converts a nullable rastime.TimeOfDay to pgtype.Time. Returns invalid if nil.
+func ConvertTimeOfDayToPgtypeTime(t *rastime.TimeOfDay) pgtype.Time {
+	if t == nil {
+		return pgtype.Time{Valid: false}
+	}
+	usec := int64(t.Hour)*3600_000_000 + int64(t.Minute)*60_000_000
+	return pgtype.Time{Microseconds: usec, Valid: true}
+}
+
+// ConvertPgtypeTimeToTimeOfDay converts a pgtype.Time to rastime.TimeOfDay. Returns nil if invalid.
+func ConvertPgtypeTimeToTimeOfDay(t pgtype.Time) *rastime.TimeOfDay {
+	if !t.Valid {
+		return nil
+	}
+	totalMinutes := t.Microseconds / 60_000_000
+	return &rastime.TimeOfDay{
+		Hour:   int(totalMinutes / 60),
+		Minute: int(totalMinutes % 60),
+	}
 }

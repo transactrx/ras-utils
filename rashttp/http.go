@@ -1,3 +1,8 @@
+// Package rashttp provides HTTP helper functions for request parsing, response writing,
+// and common web application patterns.
+//
+// It includes utilities for extracting client information from requests (IP, bearer tokens),
+// detecting request types (AJAX, HTMX), and writing JSON responses with standard status codes.
 package rashttp
 
 import (
@@ -9,10 +14,11 @@ import (
 	"strings"
 )
 
-const (
-	DefaultMaxBodySize = 1 << 20 // 1MB
-)
+// DefaultMaxBodySize is the default maximum request body size for [DecodeJSON] (1MB).
+const DefaultMaxBodySize = 1 << 20
 
+// GetFullRequestURL reconstructs the full URL from a request, including scheme and host.
+// It respects X-Forwarded-Proto and X-Forwarded-Host headers for proxied requests.
 func GetFullRequestURL(r *http.Request) string {
 	scheme := r.Header.Get("X-Forwarded-Proto")
 	if scheme == "" {
@@ -64,30 +70,30 @@ func GetBearerToken(r *http.Request) string {
 	return strings.TrimSpace(auth[len(prefix):])
 }
 
-// IsHTMX returns true if the request was made by HTMX.
+// IsHTMX reports whether the request was made by HTMX (checks HX-Request header).
 func IsHTMX(r *http.Request) bool {
 	return r.Header.Get("HX-Request") == "true"
 }
 
-// IsAjax returns true if the request appears to be an AJAX/XHR request.
+// IsAjax reports whether the request appears to be an AJAX/XHR request (checks X-Requested-With header).
 func IsAjax(r *http.Request) bool {
 	return r.Header.Get("X-Requested-With") == "XMLHttpRequest"
 }
 
-// WriteJSON writes a JSON response with the given status code.
+// WriteJSON encodes data as JSON and writes it to the response with the given status code.
 func WriteJSON(w http.ResponseWriter, status int, data any) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	return json.NewEncoder(w).Encode(data)
 }
 
-// ErrorResponse is the standard JSON error response structure.
+// ErrorResponse is the standard JSON structure for error responses.
 type ErrorResponse struct {
 	Error   string `json:"error"`
 	Message string `json:"message,omitempty"`
 }
 
-// WriteError writes a JSON error response with the given status code.
+// WriteError writes a JSON [ErrorResponse] with the given status code and message.
 func WriteError(w http.ResponseWriter, status int, message string) error {
 	return WriteJSON(w, status, ErrorResponse{
 		Error:   http.StatusText(status),
@@ -161,7 +167,7 @@ func ServiceUnavailable(w http.ResponseWriter, message string) error {
 }
 
 // DecodeJSON decodes JSON from the request body into a value of type T.
-// Limits body size to maxSize (use DefaultMaxBodySize if unsure).
+// It limits body size to maxSize; use [DefaultMaxBodySize] if unsure.
 func DecodeJSON[T any](r *http.Request, maxSize int64) (T, error) {
 	var v T
 	body := http.MaxBytesReader(nil, r.Body, maxSize)
@@ -195,11 +201,11 @@ func QueryInt(r *http.Request, key string, defaultValue int) int {
 	return i
 }
 
-// HealthCheckFunc is a function that returns nil if healthy, error otherwise.
+// HealthCheckFunc is a function that returns nil if healthy, or an error otherwise.
 type HealthCheckFunc func() error
 
-// HealthHandler returns an http.HandlerFunc that runs the health check.
-// Returns 200 OK if healthy, 503 Service Unavailable if not.
+// HealthHandler returns an [http.HandlerFunc] that runs the health check.
+// It returns 200 OK if healthy, or 503 Service Unavailable if the check returns an error.
 func HealthHandler(check HealthCheckFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := check(); err != nil {

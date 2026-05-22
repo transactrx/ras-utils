@@ -1,3 +1,11 @@
+// Package rasevents provides event publishing via NATS with synchronous and asynchronous support.
+//
+// Events can be sent synchronously using [SendEvent] or queued for asynchronous delivery
+// using [SendEventAsync]. The package supports both a global handler for simple usage
+// and independent [EventsHandler] instances for more control.
+//
+// Configuration can be provided via [Config] struct or environment variables
+// (EVENTS_DEFAULT_NAMESPACE, EVENTS_SUBJECT, etc.).
 package rasevents
 
 //goland:noinspection GoSnakeCaseUsage

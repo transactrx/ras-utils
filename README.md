@@ -8,6 +8,17 @@ Go utility library providing shared helper functions for the Clinical+ ecosystem
 go get github.com/transactrx/ras-utils
 ```
 
+## Versioning
+
+This library uses semantic versioning (`vX.Y.Z`). Tags are automatically created when PRs are merged into `main`, with the version increment determined by the branch prefix:
+
+| Branch Prefix | Version Change | Example |
+|---------------|----------------|---------|
+| `major/*` | Increment major, reset minor and patch | v1.2.3 → v2.0.0 |
+| `minor/*` | Increment minor, reset patch | v1.2.3 → v1.3.0 |
+| `build/*` | Increment patch | v1.2.3 → v1.2.4 |
+| `feature/*` | Increment patch (alias for build) | v1.2.3 → v1.2.4 |
+
 # Packages
 
 ## rascache
@@ -111,6 +122,114 @@ pgTime, err := rasconversion.TryConvertToPgtypeTimestamp(timePtr)
 pfTimez, err := rasconversion.TryConvertToPgtypeTimestamptz(timePtr)
 pfDate, err := rasconversion.TryConvertToPgtypeDate(timePtr)
 pfTime, err := rasconversion.TryConvertToPgtypeTime(timePtr)
+
+// TimeOfDay conversions
+pgTime := rasconversion.ConvertTimeOfDayToPgtypeTime(timeOfDayPtr)
+timeOfDay := rasconversion.ConvertPgtypeTimeToTimeOfDay(pgTime)
+```
+
+## rastime
+
+Time-of-day utilities for schedule management. Provides `TimeOfDay` (hour/minute without date), `TimeRange` (start/end windows), and `DayOfWeek` constants with validation, comparison, and JSON serialization.
+
+```go
+import "github.com/transactrx/ras-utils/rastime"
+
+// Create TimeOfDay with validation
+tod, err := rastime.NewTimeOfDay(9, 30)
+if err != nil {
+    // invalid hour/minute
+}
+
+// Parse from strings (24-hour or 12-hour format)
+tod, _ := rastime.ParseTimeOfDay("14:30")
+tod, _ := rastime.ParseTimeOfDay("2:30 PM")
+
+// Extract from time.Time
+tod := rastime.TimeOfDayFromTime(time.Now())
+
+// Comparison
+if tod.Before(other) { }
+if tod.After(other) { }
+if tod.Equal(other) { }
+if tod.Between(start, end) { }  // inclusive start, exclusive end
+
+// Arithmetic (wraps at midnight)
+later := tod.AddMinutes(90)
+earlier := tod.AddMinutes(-30)
+
+// Round to slot boundaries
+slot := tod.RoundUpToNextSlot(15)  // 9:07 -> 9:15
+
+// Convert to minutes since midnight
+minutes := tod.ToMinutes()
+
+// TimeRange for operating windows
+tr := rastime.TimeRange{Start: start, End: end}
+if tr.Contains(tod) { }
+duration := tr.Duration()  // time.Duration
+
+// Check for overlapping ranges
+if tr.Overlaps(otherRanges) { }
+
+// DayOfWeek constants with String() support
+day := rastime.MON
+fmt.Println(day.String())  // "Monday"
+fmt.Println(day.Short())   // "Mon"
+
+// JSON marshaling (TimeOfDay serializes as "HH:MM" string)
+data, _ := json.Marshal(tod)  // "09:30"
+```
+
+## raslocation
+
+Location-specific time and scheduling utilities for the Clinical+ ecosystem. Handles operating hours, timezone-aware open/close checks, and schedule merging.
+
+```go
+import "github.com/transactrx/ras-utils/raslocation"
+import "github.com/transactrx/ras-utils/rastime"
+
+// Create default hours (same hours all 7 days)
+start, _ := rastime.NewTimeOfDay(9, 0)
+end, _ := rastime.NewTimeOfDay(17, 0)
+hours := raslocation.NewDefaultLocationHours(true, start, end)
+
+// Check if open at a specific time
+if hours.IsOpenAt(time.Now()) {
+    // location is open
+}
+
+// Check with timezone conversion
+if hours.IsOpenAtZone(time.Now().UTC(), "America/New_York") {
+    // open in New York time
+}
+
+// Get minutes until close (0 if not open)
+minutes := hours.MinutesUntilClose(time.Now())
+
+// Get total weekly open minutes
+totalMinutes := hours.WeeklyOpenMinutes()
+
+// Find next open window
+nextOpen := hours.GetNextOpenWindow(time.Now())
+if !nextOpen.IsZero() {
+    fmt.Printf("Opens at %v\n", nextOpen)
+}
+
+// Merge campaign overrides onto base hours
+// Only replaces entries where DayOfWeek AND IsOpen match
+effective := baseHours.Merge(campaignOverrides)
+
+// Validate for overlapping time ranges
+if err := hours.Validate(); err != nil {
+    log.Printf("Invalid schedule: %v", err)
+}
+
+// Get open days only
+openDays := hours.GetOpenDays()
+
+// Human-readable schedule
+fmt.Println(hours.String()) // "[Mon 09:00-17:00 Tue 09:00-17:00 ...]"
 ```
 
 ## raslogging

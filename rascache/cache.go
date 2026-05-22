@@ -1,3 +1,16 @@
+// Package rascache provides a generic in-memory key-value cache with TTL expiration.
+//
+// The cache is thread-safe and supports both local time and UTC-based expiration
+// via functional options. Optional background cleanup can remove expired items
+// periodically without waiting for access.
+//
+// Basic usage:
+//
+//	c := rascache.NewCache[string, User]()
+//	c.Set("user:123", user, time.Now().Add(5*time.Minute))
+//	if user, ok := c.Get("user:123"); ok {
+//	    // use user
+//	}
 package rascache
 
 import (
@@ -25,39 +38,47 @@ type CacheItemUTC[T any] struct {
 	expiry time.Time
 }
 
+// isExpired reports whether the cache item has expired using UTC time.
 func (ci *CacheItemUTC[T]) isExpired() bool {
 	return ci.expiry.Before(time.Now().UTC())
 }
 
+// isExpired reports whether the cache item has expired using local time.
 func (ci *CacheItem[T]) isExpired() bool {
 	return ci.expiry.Before(time.Now())
 }
 
+// getValue returns the cached value.
 func (ci *CacheItemUTC[T]) getValue() T {
 	return ci.value
 }
 
+// getValue returns the cached value.
 func (ci *CacheItem[T]) getValue() T {
 	return ci.value
 }
 
+// getExpiration returns the expiration time.
 func (ci *CacheItemUTC[T]) getExpiration() time.Time {
 	return ci.expiry
 }
 
+// getExpiration returns the expiration time.
 func (ci *CacheItem[T]) getExpiration() time.Time {
 	return ci.expiry
 }
 
+// getTtl returns the remaining time until expiration.
 func (ci *CacheItemUTC[T]) getTtl() time.Duration {
 	return ci.expiry.Sub(time.Now().UTC())
 }
 
+// getTtl returns the remaining time until expiration.
 func (ci *CacheItem[T]) getTtl() time.Duration {
 	return time.Until(ci.expiry)
 }
 
-// NewCacheItem creates a new CacheItem that uses local time for expiration checks.
+// NewCacheItem creates a new [CacheItem] that uses local time for expiration checks.
 func NewCacheItem[T any](value T, expiry time.Time) ICacheable[T] {
 	return &CacheItem[T]{
 		value:  value,
@@ -65,7 +86,7 @@ func NewCacheItem[T any](value T, expiry time.Time) ICacheable[T] {
 	}
 }
 
-// NewCacheItemUTC creates a new CacheItemUTC that uses UTC time for expiration checks.
+// NewCacheItemUTC creates a new [CacheItemUTC] that uses UTC time for expiration checks.
 func NewCacheItemUTC[T any](value T, expiry time.Time) ICacheable[T] {
 	return &CacheItemUTC[T]{
 		value:  value,
@@ -73,7 +94,8 @@ func NewCacheItemUTC[T any](value T, expiry time.Time) ICacheable[T] {
 	}
 }
 
-// Cache represents an in-memory key-value store with expiry support.
+// Cache is a generic in-memory key-value store with expiry support.
+// It is safe for concurrent use.
 type Cache[K comparable, T any] struct {
 	data    map[K]ICacheable[T]              // stores cache items
 	mu      sync.RWMutex                     // managing concurrent access
@@ -104,7 +126,8 @@ func WithCleanup(interval time.Duration) CacheOption {
 	}
 }
 
-// NewCache creates and initializes a new Cache instance.
+// NewCache creates and initializes a new [Cache] instance.
+// Use [WithUTC] for UTC-based expiration or [WithCleanup] for background cleanup.
 func NewCache[K comparable, T any](opts ...CacheOption) *Cache[K, T] {
 	cfg := &cacheConfig{}
 	for _, opt := range opts {
@@ -139,7 +162,7 @@ func NewCacheWithCleanup[K comparable, T any](cleanupInterval time.Duration) *Ca
 }
 
 // Stop terminates the background cleanup goroutine.
-// Safe to call on caches created with NewCache (no-op).
+// It is safe to call on caches without cleanup enabled (no-op).
 func (c *Cache[K, T]) Stop() {
 	if c.stopCh != nil {
 		close(c.stopCh)
