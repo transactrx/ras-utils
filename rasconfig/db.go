@@ -1,3 +1,5 @@
+// Package rasconfig provides configuration utilities for database connections
+// and environment variable handling.
 package rasconfig
 
 import (
@@ -9,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// DBConfig holds configuration for PostgreSQL database connections.
 type DBConfig struct {
 	Host                  string
 	ReadOnlyHost          string
@@ -23,6 +26,8 @@ type DBConfig struct {
 	ConnectionTimeout     time.Duration
 }
 
+// InitDbPool creates and returns a PostgreSQL connection pool using the provided configuration.
+// It verifies connectivity by pinging the database before returning.
 func InitDbPool(ctx context.Context, cfg *DBConfig) (*pgxpool.Pool, error) {
 	slog.Debug("Config stuff", "debug config", cfg)
 
@@ -61,6 +66,8 @@ func InitDbPool(ctx context.Context, cfg *DBConfig) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
+// InitReadOnlyDbPool creates a connection pool to the read-only replica specified in [DBConfig.ReadOnlyHost].
+// It returns an error if ReadOnlyHost is not configured.
 func InitReadOnlyDbPool(ctx context.Context, cfg *DBConfig) (*pgxpool.Pool, error) {
 	if cfg.ReadOnlyHost == "" {
 		return nil, fmt.Errorf("ReadOnlyHost is not configured")

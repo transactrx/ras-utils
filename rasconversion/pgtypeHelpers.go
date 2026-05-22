@@ -1,3 +1,11 @@
+// Package rasconversion provides type conversion helpers for PostgreSQL using pgx/pgtype.
+//
+// It converts nullable Go types (*string, *int64, *time.Time, etc.) to their pgtype
+// equivalents (pgtype.Text, pgtype.Int8, pgtype.Timestamp, etc.) with proper null handling.
+//
+// Two variants are provided for each conversion:
+//   - ConvertTo* functions log errors and return invalid pgtypes on failure
+//   - TryConvertTo* functions return errors for explicit error handling
 package rasconversion
 
 import (

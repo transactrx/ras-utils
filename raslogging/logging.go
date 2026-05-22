@@ -1,3 +1,5 @@
+// Package raslogging provides HTTP request logging middleware with panic recovery
+// and structured JSON logging via [log/slog].
 package raslogging
 
 import (
@@ -13,6 +15,8 @@ var (
 	level = new(slog.LevelVar)
 )
 
+// SetUpLogger initializes the default [slog] logger with JSON formatting.
+// It reads the LOG_LEVEL environment variable to set the minimum log level.
 func SetUpLogger() {
 	setDefaultLoggerLevel()
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}).WithAttrs([]slog.Attr{slog.String("version", runtime.Version())}))
@@ -20,6 +24,7 @@ func SetUpLogger() {
 	slog.SetDefault(logger)
 }
 
+// setDefaultLoggerLevel sets the log level from the LOG_LEVEL environment variable.
 func setDefaultLoggerLevel() {
 	defaultMinLevelString := os.Getenv("LOG_LEVEL")
 
@@ -32,6 +37,7 @@ func setDefaultLoggerLevel() {
 	level.Set(defaultMinLevel)
 }
 
+// parseLogLevel parses a log level string (e.g., "debug", "info", "warn", "error").
 func parseLogLevel(s string) (slog.Level, error) {
 	var level slog.Level
 	var err = level.UnmarshalText([]byte(s))
@@ -46,14 +52,17 @@ type responseWriter struct {
 	wroteHeader bool
 }
 
+// wrapResponseWriter wraps an [http.ResponseWriter] to capture the status code.
 func wrapResponseWriter(w http.ResponseWriter) *responseWriter {
 	return &responseWriter{ResponseWriter: w}
 }
 
+// Status returns the HTTP status code written to the response.
 func (rw *responseWriter) Status() int {
 	return rw.status
 }
 
+// WriteHeader implements [http.ResponseWriter] and captures the status code.
 func (rw *responseWriter) WriteHeader(code int) {
 	if rw.wroteHeader {
 		return
@@ -64,6 +73,8 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.wroteHeader = true
 }
 
+// LoggingMiddleware returns HTTP middleware that logs requests and recovers from panics.
+// Paths in skipPaths are not logged (useful for health checks).
 func LoggingMiddleware(l *slog.Logger, skipPaths ...string) func(next http.Handler) http.Handler {
 	skipSet := make(map[string]struct{}, len(skipPaths))
 	for _, p := range skipPaths {

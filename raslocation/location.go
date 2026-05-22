@@ -1,3 +1,11 @@
+// Package raslocation provides location-specific scheduling utilities for the Clinical+ ecosystem.
+//
+// It defines [DayHours] for single-day operating hours and [LocationHours] for
+// weekly schedules. These types support timezone-aware open/close checks,
+// schedule merging for campaign overrides, and validation for overlapping ranges.
+//
+// LocationHours maps directly to JSONB columns for location_hours and
+// location_campaign_send_configuration tables.
 package raslocation
 
 import (
@@ -22,7 +30,7 @@ type DayHours struct {
 	TimeRanges []rastime.TimeRange `json:"time_ranges"`         // Operating windows for this day
 }
 
-// Validate checks for configuration errors like overlapping time ranges
+// Validate checks for configuration errors such as overlapping time ranges.
 func (dh DayHours) Validate() error {
 	for i, tr := range dh.TimeRanges {
 		if tr.Overlaps(dh.TimeRanges[i+1:]) {
@@ -32,7 +40,7 @@ func (dh DayHours) Validate() error {
 	return nil
 }
 
-// ContainsTime returns true if the given time falls within any open range for this day
+// ContainsTime reports whether the given time falls within any open range for this day.
 func (dh DayHours) ContainsTime(t rastime.TimeOfDay) bool {
 	if !dh.IsOpen {
 		return false
@@ -45,10 +53,11 @@ func (dh DayHours) ContainsTime(t rastime.TimeOfDay) bool {
 	return false
 }
 
-// LocationHours is the full week schedule (maps to JSONB column)
+// LocationHours represents a full week schedule as a slice of [DayHours].
+// It maps directly to JSONB columns in the database.
 type LocationHours []DayHours
 
-// Validate checks all days for configuration errors
+// Validate checks all days for configuration errors.
 func (lh LocationHours) Validate() error {
 	for _, dh := range lh {
 		if err := dh.Validate(); err != nil {
@@ -58,7 +67,7 @@ func (lh LocationHours) Validate() error {
 	return nil
 }
 
-// String returns a human-readable summary of the schedule
+// String returns a human-readable summary of the schedule.
 func (lh LocationHours) String() string {
 	var parts []string
 	for _, dh := range lh {
@@ -76,7 +85,7 @@ func (lh LocationHours) String() string {
 	return fmt.Sprintf("%v", parts)
 }
 
-// IsOpenAt returns true if location is open at the given time
+// IsOpenAt reports whether the location is open at the given time.
 func (lh LocationHours) IsOpenAt(t time.Time) bool {
 	dayOfWeek := int(t.Weekday())
 	timeOfDay := rastime.TimeOfDayFromTime(t)
@@ -89,8 +98,8 @@ func (lh LocationHours) IsOpenAt(t time.Time) bool {
 	return false
 }
 
-// IsOpenAtZone returns true if location is open at the given time in the specified timezone.
-// Returns false if the timezone is invalid.
+// IsOpenAtZone reports whether the location is open at the given time in the specified timezone.
+// It returns false if the timezone name is invalid.
 func (lh LocationHours) IsOpenAtZone(t time.Time, zone string) bool {
 	loc, err := time.LoadLocation(zone)
 	if err != nil {
@@ -99,8 +108,8 @@ func (lh LocationHours) IsOpenAtZone(t time.Time, zone string) bool {
 	return lh.IsOpenAt(t.In(loc))
 }
 
-// MinutesUntilClose returns minutes until the current open window closes.
-// Returns 0 if not currently open.
+// MinutesUntilClose returns the number of minutes until the current open window closes.
+// It returns 0 if not currently open.
 func (lh LocationHours) MinutesUntilClose(t time.Time) int {
 	dayOfWeek := int(t.Weekday())
 	timeOfDay := rastime.TimeOfDayFromTime(t)
@@ -118,7 +127,7 @@ func (lh LocationHours) MinutesUntilClose(t time.Time) int {
 	return 0
 }
 
-// WeeklyOpenMinutes returns total open minutes across all days
+// WeeklyOpenMinutes returns the total open minutes across all days.
 func (lh LocationHours) WeeklyOpenMinutes() int {
 	total := 0
 	for _, dh := range lh {
@@ -132,7 +141,8 @@ func (lh LocationHours) WeeklyOpenMinutes() int {
 	return total
 }
 
-// GetDayHours returns hours for a specific day of week and isOpen value, or nil if not found
+// GetDayHours returns hours for a specific day of week and isOpen value.
+// It returns nil if no matching entry is found.
 func (lh LocationHours) GetDayHours(dayOfWeek int, isOpen bool) *DayHours {
 	for i := range lh {
 		if lh[i].DayOfWeek == dayOfWeek && lh[i].IsOpen == isOpen {
@@ -142,7 +152,7 @@ func (lh LocationHours) GetDayHours(dayOfWeek int, isOpen bool) *DayHours {
 	return nil
 }
 
-// GetOpenDays returns all days where IsOpen is true
+// GetOpenDays returns all days where IsOpen is true.
 func (lh LocationHours) GetOpenDays() LocationHours {
 	var result LocationHours
 	for _, dh := range lh {
@@ -153,7 +163,8 @@ func (lh LocationHours) GetOpenDays() LocationHours {
 	return result
 }
 
-// GetFirstOpenWindow returns the first open time range for a given day, or nil if closed
+// GetFirstOpenWindow returns the first open time range for a given day.
+// It returns nil if the day is closed or has no time ranges.
 func (lh LocationHours) GetFirstOpenWindow(dayOfWeek int) *rastime.TimeRange {
 	dh := lh.GetDayHours(dayOfWeek, true)
 	if dh == nil || len(dh.TimeRanges) == 0 {
@@ -163,7 +174,8 @@ func (lh LocationHours) GetFirstOpenWindow(dayOfWeek int) *rastime.TimeRange {
 }
 
 // GetNextOpenWindow returns the next time the location opens at or after the given time.
-// Returns zero time if no open window found within 7 days.
+// If currently open, it returns from. If no open window is found within 7 days,
+// it returns a zero [time.Time].
 func (lh LocationHours) GetNextOpenWindow(from time.Time) time.Time {
 	for dayOffset := range 7 {
 		checkDate := from.AddDate(0, 0, dayOffset)
@@ -228,7 +240,7 @@ func (lh LocationHours) Merge(override LocationHours) LocationHours {
 	return result
 }
 
-// NewDefaultLocationHours creates a LocationHours with the same hours for all 7 days
+// NewDefaultLocationHours creates a [LocationHours] with the same hours for all 7 days.
 func NewDefaultLocationHours(isOpen bool, start rastime.TimeOfDay, end rastime.TimeOfDay) LocationHours {
 	return LocationHours{
 		{DayOfWeek: 0, IsOpen: isOpen, TimeRanges: []rastime.TimeRange{{Start: start, End: end}}},

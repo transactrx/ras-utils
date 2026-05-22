@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+// GetEnvironmentVariableOrDefault returns the value of the environment variable named by key,
+// or defaultValue if the variable is not set or empty.
 func GetEnvironmentVariableOrDefault(key string, defaultValue string) string {
 	valueStr := os.Getenv(key)
 	if valueStr == "" {
@@ -15,6 +17,8 @@ func GetEnvironmentVariableOrDefault(key string, defaultValue string) string {
 	return valueStr
 }
 
+// GetEnvironmentVariableOrPanic returns the value of the environment variable named by key.
+// It panics with panicMessage if the variable is not set or empty.
 func GetEnvironmentVariableOrPanic(key string, panicMessage string) string {
 	value := os.Getenv(key)
 	if value == "" {
@@ -24,6 +28,8 @@ func GetEnvironmentVariableOrPanic(key string, panicMessage string) string {
 	return value
 }
 
+// GetEnvironmentVariableOrDefaultInt returns the integer value of the environment variable named by key,
+// or defaultValue if the variable is not set, empty, or not a valid integer.
 func GetEnvironmentVariableOrDefaultInt(key string, defaultValue int) int {
 	valueStr := os.Getenv(key)
 	if valueStr == "" {
@@ -37,6 +43,8 @@ func GetEnvironmentVariableOrDefaultInt(key string, defaultValue int) int {
 	return valueInt
 }
 
+// GetEnvironmentVariableOrDefaultDuration returns the duration value of the environment variable named by key,
+// or the parsed defaultValue if the variable is not set, empty, or not a valid duration string.
 func GetEnvironmentVariableOrDefaultDuration(key string, defaultValue string) time.Duration {
 	valueStr := os.Getenv(key)
 	if valueStr == "" {
