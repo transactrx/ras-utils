@@ -1,4 +1,4 @@
-name: Auto Tag on Feature Merge
+name: Auto Tag on Merge
 
 on:
   pull_request:
@@ -9,7 +9,13 @@ jobs:
   tag:
     name: 'Create Release Tag'
     runs-on: ubuntu-latest
-    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'feature/')
+    if: |
+      github.event.pull_request.merged == true && (
+        startsWith(github.event.pull_request.head.ref, 'major/') ||
+        startsWith(github.event.pull_request.head.ref, 'minor/') ||
+        startsWith(github.event.pull_request.head.ref, 'build/') ||
+        startsWith(github.event.pull_request.head.ref, 'feature/')
+      )
 
     steps:
       - name: Checkout
@@ -17,22 +23,51 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get latest tag and increment patch
+      - name: Determine version increment
+        id: increment
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          if [[ "$BRANCH" == major/* ]]; then
+            echo "type=major" >> $GITHUB_OUTPUT
+          elif [[ "$BRANCH" == minor/* ]]; then
+            echo "type=minor" >> $GITHUB_OUTPUT
+          elif [[ "$BRANCH" == build/* ]] || [[ "$BRANCH" == feature/* ]]; then
+            echo "type=build" >> $GITHUB_OUTPUT
+          fi
+          echo "Branch: $BRANCH -> Increment: $(cat $GITHUB_OUTPUT | grep type | cut -d= -f2)"
+
+      - name: Get latest tag and calculate new version
         id: tag
         run: |
           git fetch --tags
           LATEST=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+
           if [ -z "$LATEST" ]; then
-            NEW_TAG="v1.0.0"
+            MAJOR=1
+            MINOR=0
+            PATCH=0
           else
-            MAJOR=$(echo $LATEST | cut -d. -f1)
+            MAJOR=$(echo $LATEST | sed 's/^v//' | cut -d. -f1)
             MINOR=$(echo $LATEST | cut -d. -f2)
             PATCH=$(echo $LATEST | cut -d. -f3)
-            NEW_PATCH=$((PATCH + 1))
-            NEW_TAG="${MAJOR}.${MINOR}.${NEW_PATCH}"
           fi
+
+          INCREMENT="${{ steps.increment.outputs.type }}"
+
+          if [ "$INCREMENT" = "major" ]; then
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+          elif [ "$INCREMENT" = "minor" ]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          elif [ "$INCREMENT" = "build" ]; then
+            PATCH=$((PATCH + 1))
+          fi
+
+          NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
           echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
-          echo "Latest: $LATEST -> New: $NEW_TAG"
+          echo "Latest: $LATEST -> New: $NEW_TAG ($INCREMENT)"
 
       - name: Create and push tag
         run: |

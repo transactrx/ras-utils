@@ -10,7 +10,14 @@ go get github.com/transactrx/ras-utils
 
 ## Versioning
 
-This library uses semantic versioning (`vX.X.X`). Tags are automatically created when a `feature/*` branch PR is merged into `main`, incrementing the patch version.
+This library uses semantic versioning (`vX.Y.Z`). Tags are automatically created when PRs are merged into `main`, with the version increment determined by the branch prefix:
+
+| Branch Prefix | Version Change | Example |
+|---------------|----------------|---------|
+| `major/*` | Increment major, reset minor and patch | v1.2.3 → v2.0.0 |
+| `minor/*` | Increment minor, reset patch | v1.2.3 → v1.3.0 |
+| `build/*` | Increment patch | v1.2.3 → v1.2.4 |
+| `feature/*` | Increment patch (alias for build) | v1.2.3 → v1.2.4 |
 
 # Packages
 
