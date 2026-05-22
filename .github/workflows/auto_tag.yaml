@@ -1,0 +1,42 @@
+name: Auto Tag on Feature Merge
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  tag:
+    name: 'Create Release Tag'
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'feature/')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get latest tag and increment patch
+        id: tag
+        run: |
+          git fetch --tags
+          LATEST=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          if [ -z "$LATEST" ]; then
+            NEW_TAG="v1.0.0"
+          else
+            MAJOR=$(echo $LATEST | cut -d. -f1)
+            MINOR=$(echo $LATEST | cut -d. -f2)
+            PATCH=$(echo $LATEST | cut -d. -f3)
+            NEW_PATCH=$((PATCH + 1))
+            NEW_TAG="${MAJOR}.${MINOR}.${NEW_PATCH}"
+          fi
+          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+          echo "Latest: $LATEST -> New: $NEW_TAG"
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a ${{ steps.tag.outputs.new_tag }} -m "Release ${{ steps.tag.outputs.new_tag }}"
+          git push origin ${{ steps.tag.outputs.new_tag }}
