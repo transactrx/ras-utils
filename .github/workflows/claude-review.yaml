@@ -33,7 +33,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.CLINICAL_PLUS_DEVELOPMENT_AWS_ROLE_ARN }}
-          role-session-name: "ras-utils"
+          role-session-name: "rasutils"
           aws-region: us-east-1
 
       - name: Run Claude Code Review
