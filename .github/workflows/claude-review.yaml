@@ -45,11 +45,7 @@ jobs:
 
       - name: Setup Environment
         run: |
-          branch=${GITHUB_BASE_REF:-${GITHUB_REF#refs/heads/}}
-          branchUpper="DEVELOPMENT"
-          role_name_prefix="CLINICAL_PLUS_"
-          role_name_suffix="_AWS_ROLE_ARN"
-          AWS_ROLE=$role_name_prefix$branchUpper$role_name_suffix
+          AWS_ROLE="CLINICAL_PLUS_DEVELOPMENT_AWS_ROLE_ARN"
           echo "AWS_ROLE=$(echo $AWS_ROLE)"  >> $GITHUB_ENV
           REPO_NAME=$(echo ${GITHUB_REPOSITORY##*/})
           echo "REPO_NAME=$(echo $REPO_NAME)"  >> $GITHUB_ENV
