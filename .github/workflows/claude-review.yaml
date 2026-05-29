@@ -43,18 +43,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Environment
-        run: |
-          AWS_ROLE="CLINICAL_PLUS_DEVELOPMENT_AWS_ROLE_ARN"
-          echo "AWS_ROLE=$(echo $AWS_ROLE)"  >> $GITHUB_ENV
-          REPO_NAME=$(echo ${GITHUB_REPOSITORY##*/})
-          echo "REPO_NAME=$(echo $REPO_NAME)"  >> $GITHUB_ENV
-
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets[env.AWS_ROLE] }}
-          role-session-name: ${{ env.REPO_NAME }}
+          role-to-assume: ${{ secrets.CLINICAL_PLUS_DEVELOPMENT_AWS_ROLE_ARN }}
+          role-session-name: ras-utils
           aws-region: us-east-1
 
       - name: Run Claude Code Review
