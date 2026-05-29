@@ -46,7 +46,7 @@ jobs:
       - name: Setup Environment
         run: |
           branch=${GITHUB_BASE_REF:-${GITHUB_REF#refs/heads/}}
-          branchUpper=$(echo ${branch^^})
+          branchUpper="DEVELOPMENT"
           role_name_prefix="CLINICAL_PLUS_"
           role_name_suffix="_AWS_ROLE_ARN"
           AWS_ROLE=$role_name_prefix$branchUpper$role_name_suffix
