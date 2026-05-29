@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // DefaultMaxBodySize is the default maximum request body size for [DecodeJSON] (1MB).
@@ -54,6 +55,13 @@ func GetClientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// Returns new http client with set timeout
+func NewHttpClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+	}
 }
 
 // GetBearerToken extracts the bearer token from the Authorization header.

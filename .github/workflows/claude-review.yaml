@@ -1,0 +1,163 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - Development
+  issue_comment:
+    types: [created]
+
+jobs:
+  SetDeployEnv:
+    name: 'Set Deployment Environment'
+    runs-on: ubuntu-latest
+    outputs:
+      deploy_env: ${{ env.TARGET_ENVIRONMENT }}
+
+    steps:
+      - name: Determine Environment
+        run: |
+          echo "TARGET_ENVIRONMENT=${GITHUB_BASE_REF:-${GITHUB_REF##*/}}" >> $GITHUB_ENV
+
+  review:
+    needs: SetDeployEnv
+    runs-on: ubuntu-latest
+    # Run on PR events, or on comment if it mentions @claude
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '@claude'))
+
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    environment:
+      name: ${{ needs.SetDeployEnv.outputs.deploy_env }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Environment
+        run: |
+          branch=${GITHUB_BASE_REF:-${GITHUB_REF#refs/heads/}}
+          branchUpper=$(echo ${branch^^})
+          role_name_prefix="CLINICAL_PLUS_"
+          role_name_suffix="_AWS_ROLE_ARN"
+          AWS_ROLE=$role_name_prefix$branchUpper$role_name_suffix
+          echo "AWS_ROLE=$(echo $AWS_ROLE)"  >> $GITHUB_ENV
+          REPO_NAME=$(echo ${GITHUB_REPOSITORY##*/})
+          echo "REPO_NAME=$(echo $REPO_NAME)"  >> $GITHUB_ENV
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets[env.AWS_ROLE] }}
+          role-session-name: ${{ env.REPO_NAME }}
+          aws-region: us-east-1
+
+      - name: Run Claude Code Review
+        id: claude-review
+        uses: anthropics/claude-code-action@beta
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          use_bedrock: true
+          model: us.anthropic.claude-sonnet-4-20250514-v1:0
+          trigger_phrase: "@claude"
+          direct_prompt: ${{ github.event_name == 'pull_request' }}
+          timeout_minutes: 10
+          allowed_tools: |
+            Bash(git diff:*)
+            Bash(git log:*)
+            Bash(git show:*)
+            Bash(gh pr *)
+            Bash(gh api *)
+            Read
+            Grep
+            Glob
+          prompt: |
+            CAVEMAN MODE. Terse. No filler. One line per finding.
+
+            PR: #${{ github.event.pull_request.number || github.event.issue.number }}
+            Repo: ${{ github.repository }}
+
+            ## DO THIS EXACTLY
+
+            Step 1 — Delete old bot comments:
+            ```bash
+            gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number || github.event.issue.number }}/comments --jq '.[].id' | while read id; do gh api repos/${{ github.repository }}/pulls/comments/$id -X DELETE 2>/dev/null || true; done
+            ```
+
+            Step 2 — Get HEAD commit:
+            ```bash
+            HEAD_SHA=$(gh pr view ${{ github.event.pull_request.number || github.event.issue.number }} --json headRefOid -q .headRefOid)
+            echo "HEAD_SHA=$HEAD_SHA"
+            ```
+
+            Step 3 — Get diff:
+            ```bash
+            gh pr diff ${{ github.event.pull_request.number || github.event.issue.number }}
+            ```
+
+            Step 4 — For EACH issue, post inline comment. MUST use gh api, not gh pr review:
+            ```bash
+            gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number || github.event.issue.number }}/comments \
+              -f body="🔴 bug: problem. fix." \
+              -f path="internal/service/file.go" \
+              -f commit_id="$HEAD_SHA" \
+              -F line=42 \
+              -f side="RIGHT"
+            ```
+            Run this command SEPARATELY for each finding. Use the ACTUAL file path from the diff. Use the ACTUAL line number from the diff (the + line number, not the - line).
+
+            Step 5 — Final review. Use EXACTLY this format:
+            ```bash
+            gh pr review ${{ github.event.pull_request.number || github.event.issue.number }} --comment -b "🤖 **Claude Review** | 🔴 X bugs | 🟡 X risks | 🔵 X nits
+
+            See inline comments."
+            ```
+            Or use --approve if clean (0 bugs, 0 risks). Or --request-changes if blocking bugs exist.
+
+            ## Comment format
+            Prefix: 🔴 bug | 🟡 risk | 🔵 nit | ❓ q
+            Body: `problem. fix.` — no fluff, no "I noticed", no "consider"
+
+            Focus: bugs, security, perf. Skip style unless egregious.
+
+            ## IMPORTANT: Ignore workflow files
+            Do NOT review .github/workflows/*.yaml files. The template variables like ${{ github.repository }} are NOT hardcoded values — they are GitHub Actions expressions that resolve at runtime. Skip these files entirely.
+
+            ## FINALLY
+            At bottom of full PR comment, share a fun fact about science, or geek pop-culture. Keep it brief, fun, and unique. Treat yourself afterwords.
+
+      - name: Post Token Usage
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUM: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: |
+          INPUT_TOKENS="${{ steps.claude-review.outputs.input_tokens }}"
+          OUTPUT_TOKENS="${{ steps.claude-review.outputs.output_tokens }}"
+          TOTAL_COST="${{ steps.claude-review.outputs.total_cost_usd }}"
+          MARKER="<!-- claude-review-stats -->"
+
+          BODY="${MARKER}
+          📊 **Review Stats**: ${INPUT_TOKENS:-0} in / ${OUTPUT_TOKENS:-0} out | \$${TOTAL_COST:-0}"
+
+          # Find existing stats comment
+          EXISTING_ID=$(gh api repos/${{ github.repository }}/issues/${PR_NUM}/comments \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"$MARKER\"))) | .id" | head -1)
+
+          if [ -n "$EXISTING_ID" ]; then
+            # Update existing comment
+            gh api repos/${{ github.repository }}/issues/comments/$EXISTING_ID \
+              -X PATCH -f body="$BODY"
+          else
+            # Create new comment
+            gh pr comment $PR_NUM --body "$BODY"
+          fi 
