@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize]
     branches:
-      - Development
+      - main
   issue_comment:
     types: [created]
 
@@ -13,12 +13,12 @@ jobs:
     name: 'Set Deployment Environment'
     runs-on: ubuntu-latest
     outputs:
-      deploy_env: ${{ env.TARGET_ENVIRONMENT }}
+      deploy_env: 'DEVELOPMENT'
 
     steps:
       - name: Determine Environment
         run: |
-          echo "TARGET_ENVIRONMENT=${GITHUB_BASE_REF:-${GITHUB_REF##*/}}" >> $GITHUB_ENV
+          echo "DEVELOPMENT" >> $GITHUB_ENV
 
   review:
     needs: SetDeployEnv
