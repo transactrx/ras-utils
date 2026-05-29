@@ -13,12 +13,12 @@ jobs:
     name: 'Set Deployment Environment'
     runs-on: ubuntu-latest
     outputs:
-      deploy_env: 'DEVELOPMENT'
+      deploy_env: ${{ env.TARGET_ENVIRONMENT }}
 
     steps:
       - name: Determine Environment
         run: |
-          echo "DEVELOPMENT" >> $GITHUB_ENV
+          echo "TARGET_ENVIRONMENT=DEVELOPMENT" >> $GITHUB_ENV
 
   review:
     needs: SetDeployEnv
