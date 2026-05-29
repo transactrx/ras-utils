@@ -9,19 +9,7 @@ on:
     types: [created]
 
 jobs:
-  SetDeployEnv:
-    name: 'Set Deployment Environment'
-    runs-on: ubuntu-latest
-    outputs:
-      deploy_env: ${{ env.TARGET_ENVIRONMENT }}
-
-    steps:
-      - name: Determine Environment
-        run: |
-          echo "TARGET_ENVIRONMENT=DEVELOPMENT" >> $GITHUB_ENV
-
   review:
-    needs: SetDeployEnv
     runs-on: ubuntu-latest
     # Run on PR events, or on comment if it mentions @claude
     if: |
@@ -35,8 +23,7 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
-    environment:
-      name: ${{ needs.SetDeployEnv.outputs.deploy_env }}
+    environment: DEVELOPMENT
     steps:
       - name: Checkout
         uses: actions/checkout@v4
