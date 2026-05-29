@@ -23,6 +23,8 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
+    environment:
+      name: "Development"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,8 +34,8 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.CLINICAL_PLUS_DEVELOPMENT_AWS_ROLE_ARN }}
-          role-session-name: "rasutils"
+          role-to-assume: ${{ secrets.PROCESSOR_DEVELOPMENT_AWS_ROLE_ARN }}
+          role-session-name: "ras-utils"
           aws-region: us-east-1
 
       - name: Run Claude Code Review
