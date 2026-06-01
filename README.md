@@ -94,6 +94,29 @@ cfg := &rasconfig.DBConfig{
 
 pool, err := rasconfig.InitDbPool(ctx, cfg)
 readOnlyPool, err := rasconfig.InitReadOnlyDbPool(ctx, cfg)
+
+// Snowflake connection pool (JWT authentication with private key)
+sfCfg := &rasconfig.SnowflakeDBConfig{
+    Host:                  "account.snowflakecomputing.com",
+    Port:                  443,
+    Database:              "MY_DB",
+    Schema:                "PUBLIC",
+    Warehouse:             "MY_WAREHOUSE",
+    User:                  "my_user",
+    PrivateKey:            "base64-encoded-pkcs8-private-key",
+    MaxConnections:        10,
+    MaxIdleConnections:    5,
+    MaxConnectionLifetime: 30 * time.Minute,
+}
+
+db, err := rasconfig.NewSnowflakePool(ctx, sfCfg)
+if err != nil {
+    log.Fatal(err)
+}
+defer db.Close()
+
+// PrivateKey must be base64-encoded PKCS8 format (PEM or DER).
+// Generate with: openssl genrsa 2048 | openssl pkcs8 -topk8 -nocrypt | base64 -w0
 ```
 
 ## rasconversion
