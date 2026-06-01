@@ -423,6 +423,73 @@ stack := rasstack.CreateStack(
 http.Handle("/", stack(myHandler))
 ```
 
+## rasauth
+
+OAuth2 client credentials token acquisition. Supports Basic Auth header or form body credentials, configurable scopes, and custom parameters for different identity providers.
+
+```go
+import "github.com/transactrx/ras-utils/rasauth"
+
+// Basic Auth (credentials in Authorization header)
+token, err := rasauth.GetToken(rasauth.AuthConfig{
+    ClientID:     "my-client",
+    ClientSecret: "my-secret",
+    TokenURL:     "https://auth.example.com/oauth/token",
+    UseBasicAuth: true,
+})
+
+// Form body credentials with scopes
+token, err := rasauth.GetToken(rasauth.AuthConfig{
+    ClientID:     "my-client",
+    ClientSecret: "my-secret",
+    TokenURL:     "https://auth.example.com/oauth/token",
+    Scopes:       []string{"openid", "profile"},
+})
+
+// With extra parameters (e.g., audience for Auth0)
+token, err := rasauth.GetToken(rasauth.AuthConfig{
+    ClientID:     "my-client",
+    ClientSecret: "my-secret",
+    TokenURL:     "https://auth.example.com/oauth/token",
+    UseBasicAuth: true,
+    ExtraParams: map[string]string{
+        "audience": "https://api.example.com",
+    },
+})
+
+// Custom grant type and timeout
+token, err := rasauth.GetToken(rasauth.AuthConfig{
+    ClientID:     "my-client",
+    ClientSecret: "my-secret",
+    TokenURL:     "https://auth.example.com/oauth/token",
+    GrantType:    "refresh_token",
+    Timeout:      5 * time.Second,
+    ExtraParams: map[string]string{
+        "refresh_token": "existing-refresh-token",
+    },
+})
+
+// Access token response fields
+fmt.Println(token.AccessToken)   // "eyJ..."
+fmt.Println(token.ExpiresIn)     // 3600
+fmt.Println(token.TokenType)     // "Bearer"
+fmt.Println(token.RefreshToken)  // optional
+fmt.Println(token.IDToken)       // optional (OpenID Connect)
+fmt.Println(token.Scope)         // optional
+
+// Error handling
+token, err := rasauth.GetToken(config)
+if err != nil {
+    if authErr, ok := err.(*rasauth.AuthError); ok {
+        log.Printf("Auth failed: %d %s", authErr.StatusCode, authErr.Message)
+    }
+}
+
+// Legacy helpers (for backwards compatibility)
+token, err := rasauth.GetCISToken(clientID, clientSecret, tokenURL)  // form body + openid scope
+token, err := rasauth.GetJWTToken(clientID, clientSecret, tokenURL)  // Basic Auth
+```
+
 ## rasworker
 
 Generic worker pool for concurrent job execution with graceful shutdown and error handling.
