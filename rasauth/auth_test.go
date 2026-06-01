@@ -197,6 +197,9 @@ func TestGetToken_ErrorResponse(t *testing.T) {
 	if authErr.ClientID != "bad-client" {
 		t.Errorf("expected client_id=bad-client, got %s", authErr.ClientID)
 	}
+	if authErr.Message != `{"error":"invalid_client"}` {
+		t.Errorf("expected error body in message, got %s", authErr.Message)
+	}
 }
 
 func TestGetToken_InvalidJSON(t *testing.T) {
@@ -254,6 +257,21 @@ func TestGetToken_InvalidURL(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("expected connection error, got nil")
+	}
+}
+
+func TestGetToken_EmptyTokenURL(t *testing.T) {
+	_, err := GetToken(AuthConfig{
+		ClientID:     "client",
+		ClientSecret: "secret",
+		TokenURL:     "",
+	})
+
+	if err == nil {
+		t.Fatal("expected error for empty TokenURL, got nil")
+	}
+	if err.Error() != "TokenURL required" {
+		t.Errorf("expected 'TokenURL required', got %s", err.Error())
 	}
 }
 

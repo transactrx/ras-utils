@@ -4,9 +4,9 @@ package rasauth
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -54,6 +54,10 @@ func (e *AuthError) Error() string {
 
 // GetToken acquires an OAuth2 token using client credentials flow.
 func GetToken(config AuthConfig) (TokenResponse, error) {
+	if config.TokenURL == "" {
+		return TokenResponse{}, fmt.Errorf("TokenURL required")
+	}
+
 	// Apply defaults
 	if config.GrantType == "" {
 		config.GrantType = "client_credentials"
@@ -87,7 +91,6 @@ func GetToken(config AuthConfig) (TokenResponse, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Content-Length", strconv.Itoa(len(encodedData)))
 
 	if config.UseBasicAuth {
 		req.SetBasicAuth(config.ClientID, config.ClientSecret)
@@ -101,10 +104,15 @@ func GetToken(config AuthConfig) (TokenResponse, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		msg := "token request failed"
+		if len(body) > 0 {
+			msg = string(body)
+		}
 		return TokenResponse{}, &AuthError{
 			StatusCode: resp.StatusCode,
 			Status:     resp.Status,
-			Message:    "token request failed",
+			Message:    msg,
 			TokenURL:   config.TokenURL,
 			ClientID:   config.ClientID,
 		}
@@ -125,11 +133,11 @@ func GetToken(config AuthConfig) (TokenResponse, error) {
 }
 
 // GetCISToken fetches a token with credentials in the form body and openid scope.
-func GetCISToken(clientId string, clientSecret string, tokenUrl string) (TokenResponse, error) {
+func GetCISToken(clientID string, clientSecret string, tokenURL string) (TokenResponse, error) {
 	config := AuthConfig{
-		ClientID:     clientId,
+		ClientID:     clientID,
 		ClientSecret: clientSecret,
-		TokenURL:     tokenUrl,
+		TokenURL:     tokenURL,
 		UseBasicAuth: false,
 		Scopes:       []string{"openid"},
 		Timeout:      10 * time.Second,
@@ -138,11 +146,11 @@ func GetCISToken(clientId string, clientSecret string, tokenUrl string) (TokenRe
 }
 
 // GetJWTToken fetches a token using Basic Auth header.
-func GetJWTToken(clientId string, clientSecret string, tokenUrl string) (TokenResponse, error) {
+func GetJWTToken(clientID string, clientSecret string, tokenURL string) (TokenResponse, error) {
 	config := AuthConfig{
-		ClientID:     clientId,
+		ClientID:     clientID,
 		ClientSecret: clientSecret,
-		TokenURL:     tokenUrl,
+		TokenURL:     tokenURL,
 		UseBasicAuth: true,
 		Timeout:      10 * time.Second,
 	}

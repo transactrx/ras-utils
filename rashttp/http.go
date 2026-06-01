@@ -57,7 +57,7 @@ func GetClientIP(r *http.Request) string {
 	return host
 }
 
-// Returns new http client with set timeout
+// NewHttpClient returns an HTTP client with the given timeout.
 func NewHttpClient(timeout time.Duration) *http.Client {
 	return &http.Client{
 		Timeout: timeout,
