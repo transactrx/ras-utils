@@ -14,7 +14,7 @@ import (
 	"log/slog"
 	"time"
 
-	sf "github.com/snowflakedb/gosnowflake"
+	sf "github.com/snowflakedb/gosnowflake/v2"
 )
 
 // SnowflakeDBConfig holds configuration parameters for connecting to Snowflake.
