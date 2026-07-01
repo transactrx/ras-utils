@@ -29,6 +29,7 @@ Utility library organized by functional domain - each package is independent wit
 - **raslogging/** - HTTP middleware with request logging and panic recovery
 - **rasstack/** - HTTP middleware composition
 - **rastime/** - TimeOfDay, TimeRange, DayOfWeek types for schedule management
+- **rasvalidation/** - Common validators (UUID, email, phone, ZIP, NPI, dates)
 - **rasworker/** - Generic worker pool with graceful shutdown
 
 ## Versioning
