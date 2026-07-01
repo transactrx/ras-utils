@@ -10,14 +10,11 @@ import (
 )
 
 var (
-	// US phone: 10 digits, optional leading 1, allows common separators
-	phoneRegex = regexp.MustCompile(`^1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$`)
+	// US phone: 10 digits, optional leading 1, balanced parens, common separators
+	phoneRegex = regexp.MustCompile(`^1?[\s.-]?(\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}$`)
 
 	// US ZIP: 5 digits or 5+4 format
 	zipRegex = regexp.MustCompile(`^\d{5}(-\d{4})?$`)
-
-	// NPI: exactly 10 digits
-	npiRegex = regexp.MustCompile(`^\d{10}$`)
 )
 
 // IsValidUUID returns true if s is a valid, non-nil UUID.
@@ -57,12 +54,44 @@ func IsValidUSZip(s string) bool {
 	return zipRegex.MatchString(s)
 }
 
-// IsValidNPI returns true if s is a valid NPI (10 digits).
-func IsValidNPI(s string) bool {
-	if s == "" {
+// IsValidNPIFormat returns true if s is a valid NPI format (exactly 10 digits).
+func IsValidNPIFormat(s string) bool {
+	if s == "" || len(s) != 10 {
 		return false
 	}
-	return npiRegex.MatchString(s)
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// IsValidNPIChecksum returns true if s passes the NPI Luhn checksum validation.
+// Assumes s is already a valid 10-digit format.
+func IsValidNPIChecksum(s string) bool {
+	if len(s) != 10 {
+		return false
+	}
+	// Luhn check with 80840 prefix per CMS standard
+	prefixed := "80840" + s
+	sum := 0
+	for i := len(prefixed) - 1; i >= 0; i-- {
+		d := int(prefixed[i] - '0')
+		if (len(prefixed)-1-i)%2 == 1 {
+			d *= 2
+			if d > 9 {
+				d -= 9
+			}
+		}
+		sum += d
+	}
+	return sum%10 == 0
+}
+
+// IsValidNPI returns true if s is a valid NPI (10 digits with valid Luhn checksum).
+func IsValidNPI(s string) bool {
+	return IsValidNPIFormat(s) && IsValidNPIChecksum(s)
 }
 
 // IsValidDateString returns true if s can be parsed with the given layout.

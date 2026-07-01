@@ -9,8 +9,8 @@ func TestIsValidUUID(t *testing.T) {
 		want  bool
 	}{
 		{"valid uuid", "550e8400-e29b-41d4-a716-446655440000", true},
-		{"valid uuid lowercase", "550e8400-e29b-41d4-a716-446655440000", true},
 		{"valid uuid uppercase", "550E8400-E29B-41D4-A716-446655440000", true},
+		{"valid uuid v4", "f47ac10b-58cc-4372-a567-0e02b2c3d479", true},
 		{"nil uuid", "00000000-0000-0000-0000-000000000000", false},
 		{"empty string", "", false},
 		{"invalid format", "not-a-uuid", false},
@@ -60,12 +60,17 @@ func TestIsValidUSPhone(t *testing.T) {
 		{"with dashes", "555-123-4567", true},
 		{"with dots", "555.123.4567", true},
 		{"with parens", "(555)123-4567", true},
+		{"with parens and dashes", "(555)-123-4567", true},
 		{"with leading 1", "15551234567", true},
 		{"with leading 1 and dashes", "1-555-123-4567", true},
+		{"with leading 1 and parens", "1-(555)-123-4567", true},
 		{"empty string", "", false},
 		{"too short", "555123456", false},
 		{"too long", "55512345678", false},
 		{"letters", "555-ABC-4567", false},
+		{"unbalanced paren open only", "(555123-4567", false},
+		{"unbalanced paren close only", "555)123-4567", false},
+		{"misplaced space", "5 55-123-4567", false},
 	}
 
 	for _, tt := range tests {
@@ -107,7 +112,12 @@ func TestIsValidNPI(t *testing.T) {
 		input string
 		want  bool
 	}{
-		{"valid 10 digits", "1234567890", true},
+		{"valid NPI", "1234567893", true},
+		{"valid NPI 2", "1245319599", true},
+		{"valid NPI 3", "1003000126", true},
+		{"valid NPI 4", "1003968488", true},
+		{"invalid checksum", "1234567890", false},
+		{"all zeros", "0000000000", false},
 		{"empty string", "", false},
 		{"too short", "123456789", false},
 		{"too long", "12345678901", false},

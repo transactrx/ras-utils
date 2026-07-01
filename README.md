@@ -542,8 +542,11 @@ rasvalidation.IsValidUSPhone("1-555-123-4567")  // true
 rasvalidation.IsValidUSZip("12345")      // true
 rasvalidation.IsValidUSZip("12345-6789") // true
 
-// NPI (10 digits)
-rasvalidation.IsValidNPI("1234567890") // true
+// NPI validation (10 digits with Luhn checksum)
+rasvalidation.IsValidNPI("1234567893")       // true (valid checksum)
+rasvalidation.IsValidNPI("1234567890")       // false (invalid checksum)
+rasvalidation.IsValidNPIFormat("1234567890") // true (format only, no checksum)
+rasvalidation.IsValidNPIChecksum("1234567893") // true (checksum only)
 
 // Date validation
 rasvalidation.IsValidISO8601Date("2024-01-15")    // true (YYYY-MM-DD)
