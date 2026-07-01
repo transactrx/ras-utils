@@ -1,0 +1,14 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - Development
+  issue_comment:
+    types: [created]
+
+jobs:
+  review:
+    uses: transactrx/clinicalPlus/.github/workflows/claude-review-reusable.yaml@Development
+    secrets: inherit
