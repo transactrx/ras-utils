@@ -513,6 +513,47 @@ token, err := rasauth.GetCISToken(clientID, clientSecret, tokenURL)  // form bod
 token, err := rasauth.GetJWTToken(clientID, clientSecret, tokenURL)  // Basic Auth
 ```
 
+## rasvalidation
+
+Common validation helpers for strings, identifiers, and dates.
+
+```go
+import "github.com/transactrx/ras-utils/rasvalidation"
+
+// UUID validation (non-empty, valid format, non-nil)
+if rasvalidation.IsValidUUID("550e8400-e29b-41d4-a716-446655440000") {
+    // valid
+}
+rasvalidation.IsValidUUID("")                                      // false
+rasvalidation.IsValidUUID("00000000-0000-0000-0000-000000000000")  // false (nil UUID)
+
+// Email validation (RFC 5322)
+rasvalidation.IsValidEmail("user@example.com")     // true
+rasvalidation.IsValidEmail("user+tag@example.com") // true
+rasvalidation.IsValidEmail("invalid")              // false
+
+// US phone number (10 digits, various formats)
+rasvalidation.IsValidUSPhone("5551234567")      // true
+rasvalidation.IsValidUSPhone("555-123-4567")    // true
+rasvalidation.IsValidUSPhone("(555)123-4567")   // true
+rasvalidation.IsValidUSPhone("1-555-123-4567")  // true
+
+// US ZIP code (5 or 5+4 format)
+rasvalidation.IsValidUSZip("12345")      // true
+rasvalidation.IsValidUSZip("12345-6789") // true
+
+// NPI validation (10 digits with Luhn checksum)
+rasvalidation.IsValidNPI("1234567893")       // true (valid checksum)
+rasvalidation.IsValidNPI("1234567890")       // false (invalid checksum)
+rasvalidation.IsValidNPIFormat("1234567890") // true (format only, no checksum)
+rasvalidation.IsValidNPIChecksum("1234567893") // true (checksum only)
+
+// Date validation
+rasvalidation.IsValidISO8601Date("2024-01-15")    // true (YYYY-MM-DD)
+rasvalidation.IsValidMMDDYYYYDate("01/15/2024")   // true (MM/DD/YYYY)
+rasvalidation.IsValidDateString("15-01-2024", "02-01-2006") // custom layout
+```
+
 ## rasworker
 
 Generic worker pool for concurrent job execution with graceful shutdown and error handling.
