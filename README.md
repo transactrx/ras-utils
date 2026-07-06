@@ -25,6 +25,8 @@ This library uses semantic versioning (`vX.Y.Z`). Tags are automatically created
 
 Generic in-memory key-value cache with TTL expiration and thread-safe operations. Supports both local time and UTC-based expiration via functional options.
 
+**Singleflight protection:** `GetOrStore` uses singleflight internally to prevent thundering herd on cache miss. When multiple goroutines request the same missing key simultaneously, only one executes the fetch callback while others wait and share the result.
+
 ```go
 import "github.com/transactrx/ras-utils/rascache"
 
@@ -49,6 +51,7 @@ c.Set("user:123", user, time.Now().Add(5*time.Minute))
 user, ok := c.Get("user:123")
 
 // Cache-through pattern: fetch from source if not cached
+// Safe for concurrent use - only one goroutine fetches on cache miss
 user, ok := c.GetOrStore("user:123", func() (User, time.Time, bool) {
     user, err := db.GetUser(123)
     if err != nil {
@@ -60,6 +63,24 @@ user, ok := c.GetOrStore("user:123", func() (User, time.Time, bool) {
 // Delete and Clear
 c.Delete("user:123")
 c.Clear()
+```
+
+**Token caching pattern:** For OAuth tokens or similar credentials with expiry, cache at half the token lifetime to allow refresh before expiration:
+
+```go
+tokenCache := rascache.NewCache[string, string]()
+
+func GetAuthToken() (string, bool) {
+    return tokenCache.GetOrStore("auth_token", func() (string, time.Time, bool) {
+        token, err := fetchTokenFromAuthServer()
+        if err != nil {
+            return "", time.Time{}, false
+        }
+        // Cache for half the token lifetime
+        expiry := time.Now().Add(time.Duration(token.ExpiresIn/2) * time.Second)
+        return token.AccessToken, expiry, true
+    })
+}
 ```
 
 ## rasconfig
