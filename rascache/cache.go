@@ -14,8 +14,11 @@
 package rascache
 
 import (
+	"fmt"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // ICacheable defines the interface for cache items with expiration behavior.
@@ -101,6 +104,7 @@ type Cache[K comparable, T any] struct {
 	mu      sync.RWMutex                     // managing concurrent access
 	stopCh  chan struct{}                    // signal to stop background cleanup
 	newItem func(T, time.Time) ICacheable[T] // factory for creating cache items
+	group   singleflight.Group               // deduplicates concurrent fetches in GetOrStore
 }
 
 // cacheConfig holds configuration for a Cache instance.
@@ -255,16 +259,41 @@ func (c *Cache[K, T]) TryGet(key K, storeOperation StoreCacheOperation[T]) (T, b
 	})
 }
 
+// getOrStoreResult wraps the result of a singleflight call for GetOrStore.
+type getOrStoreResult[T any] struct {
+	value      T
+	expiration time.Time
+	ok         bool
+}
+
 // GetOrStore retrieves a cached value or fetches and stores it on miss.
+// Concurrent calls for the same key will share a single fetch operation,
+// preventing thundering herd on cache miss.
 func (c *Cache[K, T]) GetOrStore(key K, storeOperation StoreCacheCallback[T]) (T, bool) {
+	// Fast path: return cached value if present
 	if cachedValue, isCached := c.Get(key); isCached {
 		return cachedValue, true
 	}
 
-	if newValue, expiration, successful := storeOperation(); successful {
-		c.Set(key, newValue, expiration)
-		return newValue, true
-	}
+	// Slow path: use singleflight to ensure only one goroutine fetches
+	keyStr := fmt.Sprintf("%v", key)
+	resultIface, _, _ := c.group.Do(keyStr, func() (interface{}, error) {
+		// Double-check cache inside singleflight - another goroutine may have populated it
+		if cachedValue, isCached := c.Get(key); isCached {
+			return getOrStoreResult[T]{value: cachedValue, ok: true}, nil
+		}
 
-	return zeroVal[T](), false
+		if newValue, expiration, successful := storeOperation(); successful {
+			c.Set(key, newValue, expiration)
+			return getOrStoreResult[T]{value: newValue, expiration: expiration, ok: true}, nil
+		}
+
+		return getOrStoreResult[T]{ok: false}, nil
+	})
+
+	result := resultIface.(getOrStoreResult[T])
+	if !result.ok {
+		return zeroVal[T](), false
+	}
+	return result.value, true
 }

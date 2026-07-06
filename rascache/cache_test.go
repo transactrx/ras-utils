@@ -2,6 +2,7 @@ package rascache
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -204,6 +205,36 @@ func TestCache_GetOrStore_CacheMiss(t *testing.T) {
 	}
 	if val != "fetched_value" {
 		t.Errorf("expected fetched_value in cache, got %s", val)
+	}
+}
+
+func TestCache_GetOrStore_Singleflight(t *testing.T) {
+	c := NewCache[string, string]()
+	var fetchCount atomic.Int32
+	var wg sync.WaitGroup
+
+	// Simulate 50 concurrent requests all hitting cache miss simultaneously
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			val, ok := c.GetOrStore("token", func() (string, time.Time, bool) {
+				fetchCount.Add(1)
+				time.Sleep(10 * time.Millisecond) // Simulate slow fetch
+				return "fetched_token", time.Now().Add(time.Hour), true
+			})
+			if !ok || val != "fetched_token" {
+				t.Errorf("unexpected result: ok=%v, val=%s", ok, val)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Singleflight should ensure only ONE fetch happened despite 50 concurrent calls
+	count := fetchCount.Load()
+	if count != 1 {
+		t.Errorf("expected exactly 1 fetch due to singleflight, got %d", count)
 	}
 }
 
