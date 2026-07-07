@@ -21,6 +21,20 @@ This library uses semantic versioning (`vX.Y.Z`). Tags are automatically created
 
 # Packages
 
+| Package | Description | README |
+|---------|-------------|--------|
+| [rascache](#rascache) | Generic TTL cache with singleflight | [README](rascache/README.md) |
+| [rasconfig](#rasconfig) | Database pools and env helpers | [README](rasconfig/README.md) |
+| [rasconversion](#rasconversion) | pgtype ↔ Go type conversions | [README](rasconversion/README.md) |
+| [rasevents](#rasevents) | NATS event publishing | [README](rasevents/README.md) |
+| [rashttp](#rashttp) | HTTP request/response helpers | [README](rashttp/README.md) |
+| [raslocation](#raslocation) | Operating hours and scheduling | [README](raslocation/README.md) |
+| [raslogging](#raslogging) | HTTP logging middleware | [README](raslogging/README.md) |
+| [rasstack](#rasstack) | Middleware composition | [README](rasstack/README.md) |
+| [rastime](#rastime) | TimeOfDay and schedule types | [README](rastime/README.md) |
+| [rasvalidation](#rasvalidation) | UUID, email, phone, NPI validators | [README](rasvalidation/README.md) |
+| [rasworker](#rasworker) | Worker pool with graceful shutdown | [README](rasworker/README.md) |
+
 ## rascache
 
 Generic in-memory key-value cache with TTL expiration and thread-safe operations. Supports both local time and UTC-based expiration via functional options.
@@ -142,34 +156,92 @@ defer db.Close()
 
 ## rasconversion
 
-Type conversion helpers for PostgreSQL (pgx/pgtype). Converts nullable Go types to pgtype equivalents with proper null handling.
+Type conversion helpers for PostgreSQL (pgx/pgtype). Converts nullable Go types to pgtype equivalents with proper null handling, and vice versa.
 
 ```go
 import "github.com/transactrx/ras-utils/rasconversion"
+```
 
-// Convert nullable Go types to pgtype (logs errors, returns invalid on failure)
-pgText := rasconversion.ConvertToPgtypeString(stringPtr)
-pgInt8 := rasconversion.ConvertToPgtypeInt8(int64Ptr)
-pgInt2 := rasconversion.ConvertToPgtypeInt2(int32Ptr)
-pgBool := rasconversion.ConvertToPgtypeBool(boolPtr)
-pgTime := rasconversion.ConvertToPgtypeTimestamp(timePtr)
-pfTimez := rasconversion.ConvertToPgtypeTimestamptz(timePtr)
-pfDate := rasconversion.ConvertToPgtypeDate(timePtr)
-pfTime := rasconversion.ConvertToPgtypeTime(timePtr)
+### Conversion Functions
 
-// Error-returning variants for explicit error handling
+| pgtype | Go Type | To pgtype | From pgtype | OrDefault |
+|--------|---------|-----------|-------------|-----------|
+| `Text` | `*string` | `ConvertToPgtypeString` | `ConvertFromPgtypeText` | `ConvertFromPgtypeTextOrDefault` |
+| `Int2` | `*int32` / `*int16` | `ConvertToPgtypeInt2` | `ConvertFromPgtypeInt2` | `ConvertFromPgtypeInt2OrDefault` |
+| `Int4` | `*int32` | `ConvertToPgtypeInt4` | `ConvertFromPgtypeInt4` | `ConvertFromPgtypeInt4OrDefault` |
+| `Int8` | `*int64` | `ConvertToPgtypeInt8` | `ConvertFromPgtypeInt8` | `ConvertFromPgtypeInt8OrDefault` |
+| `Bool` | `*bool` | `ConvertToPgtypeBool` | `ConvertFromPgtypeBool` | `ConvertFromPgtypeBoolOrDefault` |
+| `Float4` | `*float32` | `ConvertToPgtypeFloat4` | `ConvertFromPgtypeFloat4` | `ConvertFromPgtypeFloat4OrDefault` |
+| `Float8` | `*float64` | `ConvertToPgtypeFloat8` | `ConvertFromPgtypeFloat8` | `ConvertFromPgtypeFloat8OrDefault` |
+| `Numeric` | `*float64` | `ConvertToPgtypeNumeric` | `ConvertFromPgtypeNumeric` | `ConvertFromPgtypeNumericOrDefault` |
+| `Numeric` | `*big.Float` | — | `ConvertFromPgtypeNumericToBigFloat` | — |
+| `Timestamp` | `*time.Time` | `ConvertToPgtypeTimestamp` | `ConvertFromPgtypeTimestamp` | `ConvertFromPgtypeTimestampOrDefault` |
+| `Timestamptz` | `*time.Time` | `ConvertToPgtypeTimestamptz` | `ConvertFromPgtypeTimestamptz` | `ConvertFromPgtypeTimestamptzOrDefault` |
+| `Date` | `*time.Time` | `ConvertToPgtypeDate` | `ConvertFromPgtypeDate` | `ConvertFromPgtypeDateOrDefault` |
+| `Time` | `*time.Time` | `ConvertToPgtypeTime` | `ConvertFromPgtypeTime` | — |
+| `Time` | `*rastime.TimeOfDay` | `ConvertTimeOfDayToPgtypeTime` | `ConvertPgtypeTimeToTimeOfDay` | — |
+| `Interval` | `*time.Duration` | `ConvertToPgtypeInterval` | `ConvertFromPgtypeInterval` | `ConvertFromPgtypeIntervalOrDefault` |
+| `UUID` | `*uuid.UUID` | `ConvertToPgtypeUUID` | `ConvertFromPgtypeUUID` | `ConvertFromPgtypeUUIDOrDefault` |
+| `UUID` | `*string` | `ConvertToPgtypeUUIDFromString` | `ConvertFromPgtypeUUIDToString` | `ConvertFromPgtypeUUIDToStringOrDefault` |
+| `JSONB` | `any` / `[]byte` | `ConvertToPgtypeJSONB` | `ConvertFromPgtypeJSONB[T]` | — |
+
+### Behavior
+
+**To pgtype functions:**
+- Return `Valid: false` if input pointer is nil
+- Log errors and return `Valid: false` on conversion failure
+
+**From pgtype functions:**
+- Return `nil` if pgtype has `Valid: false`
+
+**OrDefault functions:**
+- Return the provided default value if pgtype has `Valid: false`
+- Useful when you want a value type instead of a pointer
+
+**Error-returning variants:** All "To pgtype" functions have a `TryConvert*` variant that returns an error instead of logging:
+
+```go
 pgText, err := rasconversion.TryConvertToPgtypeString(stringPtr)
-pgInt8, err := rasconversion.TryConvertToPgtypeInt8(int64Ptr)
-pgInt2, err := rasconversion.TryConvertToPgtypeInt2(int32Ptr)
-pgBool, err := rasconversion.TryConvertToPgtypeBool(boolPtr)
-pgTime, err := rasconversion.TryConvertToPgtypeTimestamp(timePtr)
-pfTimez, err := rasconversion.TryConvertToPgtypeTimestamptz(timePtr)
-pfDate, err := rasconversion.TryConvertToPgtypeDate(timePtr)
-pfTime, err := rasconversion.TryConvertToPgtypeTime(timePtr)
+pgInt4, err := rasconversion.TryConvertToPgtypeInt4(int32Ptr)
+pgNumeric, err := rasconversion.TryConvertToPgtypeNumeric(float64Ptr)
+pgInterval, err := rasconversion.TryConvertToPgtypeInterval(durationPtr)
+jsonBytes, err := rasconversion.TryConvertToPgtypeJSONB(anyValue)
+// ... etc for all ConvertTo* functions
+```
 
-// TimeOfDay conversions
-pgTime := rasconversion.ConvertTimeOfDayToPgtypeTime(timeOfDayPtr)
-timeOfDay := rasconversion.ConvertPgtypeTimeToTimeOfDay(pgTime)
+### JSONB Example
+
+```go
+// Marshal any Go value to JSONB bytes
+type UserPrefs struct {
+    Theme    string `json:"theme"`
+    Timezone string `json:"timezone"`
+}
+prefs := UserPrefs{Theme: "dark", Timezone: "America/New_York"}
+jsonBytes := rasconversion.ConvertToPgtypeJSONB(prefs)
+
+// Unmarshal JSONB bytes to a typed struct (generic)
+result := rasconversion.ConvertFromPgtypeJSONB[UserPrefs](jsonBytes)
+if result != nil {
+    fmt.Println(result.Theme) // "dark"
+}
+
+// With error handling
+result, err := rasconversion.TryConvertFromPgtypeJSONB[UserPrefs](jsonBytes)
+```
+
+### Interval Example
+
+```go
+// Duration to pgtype.Interval
+d := 2*time.Hour + 30*time.Minute
+pgInterval := rasconversion.ConvertToPgtypeInterval(&d)
+
+// pgtype.Interval to Duration
+duration := rasconversion.ConvertFromPgtypeInterval(pgInterval)
+
+// With default fallback
+duration := rasconversion.ConvertFromPgtypeIntervalOrDefault(pgInterval, time.Hour)
 ```
 
 ## rastime
