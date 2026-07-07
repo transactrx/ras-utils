@@ -21,6 +21,20 @@ This library uses semantic versioning (`vX.Y.Z`). Tags are automatically created
 
 # Packages
 
+| Package | Description | README |
+|---------|-------------|--------|
+| [rascache](#rascache) | Generic TTL cache with singleflight | [README](rascache/README.md) |
+| [rasconfig](#rasconfig) | Database pools and env helpers | [README](rasconfig/README.md) |
+| [rasconversion](#rasconversion) | pgtype ↔ Go type conversions | [README](rasconversion/README.md) |
+| [rasevents](#rasevents) | NATS event publishing | [README](rasevents/README.md) |
+| [rashttp](#rashttp) | HTTP request/response helpers | [README](rashttp/README.md) |
+| [raslocation](#raslocation) | Operating hours and scheduling | [README](raslocation/README.md) |
+| [raslogging](#raslogging) | HTTP logging middleware | [README](raslogging/README.md) |
+| [rasstack](#rasstack) | Middleware composition | [README](rasstack/README.md) |
+| [rastime](#rastime) | TimeOfDay and schedule types | [README](rastime/README.md) |
+| [rasvalidation](#rasvalidation) | UUID, email, phone, NPI validators | [README](rasvalidation/README.md) |
+| [rasworker](#rasworker) | Worker pool with graceful shutdown | [README](rasworker/README.md) |
+
 ## rascache
 
 Generic in-memory key-value cache with TTL expiration and thread-safe operations. Supports both local time and UTC-based expiration via functional options.
