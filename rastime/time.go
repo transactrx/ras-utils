@@ -53,6 +53,80 @@ type TimeOfDay struct {
 	Minute int `json:"Minute"`
 }
 
+// DateRange represents a time period with a start and end timestamp.
+// Used for period-based calculations like rolling annual windows.
+type DateRange struct {
+	Start time.Time `json:"Start"`
+	End   time.Time `json:"End"`
+}
+
+// NewDateRange creates a DateRange with validation (Start must be before End).
+func NewDateRange(start, end time.Time) (DateRange, error) {
+	dr := DateRange{Start: start, End: end}
+	if err := dr.Validate(); err != nil {
+		return DateRange{}, err
+	}
+	return dr, nil
+}
+
+// CalendarYear returns a DateRange for the given year (Jan 1 00:00:00 to Jan 1 00:00:00 next year).
+func CalendarYear(year int) DateRange {
+	return DateRange{
+		Start: time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC),
+		End:   time.Date(year+1, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+}
+
+// AnnualPeriodFrom returns a DateRange starting at the given time and ending 1 year later.
+func AnnualPeriodFrom(start time.Time) DateRange {
+	return DateRange{
+		Start: start,
+		End:   start.AddDate(1, 0, 0),
+	}
+}
+
+// Validate returns an error if Start is not before End.
+func (dr DateRange) Validate() error {
+	if !dr.Start.Before(dr.End) {
+		return fmt.Errorf("invalid date range: start (%v) must be before end (%v)", dr.Start, dr.End)
+	}
+	return nil
+}
+
+// IsZero reports whether both Start and End are zero values.
+func (dr DateRange) IsZero() bool {
+	return dr.Start.IsZero() && dr.End.IsZero()
+}
+
+// Duration returns the length of this date range.
+func (dr DateRange) Duration() time.Duration {
+	return dr.End.Sub(dr.Start)
+}
+
+// Contains reports whether t is in the half-open interval [Start, End).
+func (dr DateRange) Contains(t time.Time) bool {
+	return !t.Before(dr.Start) && t.Before(dr.End)
+}
+
+// ContainsInclusive reports whether t is in the closed interval [Start, End].
+func (dr DateRange) ContainsInclusive(t time.Time) bool {
+	return !t.Before(dr.Start) && !t.After(dr.End)
+}
+
+// Overlaps reports whether this range overlaps with other.
+// Adjacent ranges (where one ends exactly when the other starts) are not considered overlapping.
+func (dr DateRange) Overlaps(other DateRange) bool {
+	return dr.Start.Before(other.End) && dr.End.After(other.Start)
+}
+
+// NextAnnualPeriod returns a new DateRange shifted forward by 1 year.
+func (dr DateRange) NextAnnualPeriod() DateRange {
+	return DateRange{
+		Start: dr.Start.AddDate(1, 0, 0),
+		End:   dr.End.AddDate(1, 0, 0),
+	}
+}
+
 // Validate returns an error if the TimeOfDay has invalid hour or minute values.
 func (t TimeOfDay) Validate() error {
 	if t.Hour < 0 || t.Hour > 23 {
