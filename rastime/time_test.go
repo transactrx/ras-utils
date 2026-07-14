@@ -421,3 +421,326 @@ func TestTimeRange_Overlaps(t *testing.T) {
 		})
 	}
 }
+
+// DateRange tests
+
+func TestNewDateRange(t *testing.T) {
+	start := time.Date(2025, 2, 20, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 2, 20, 0, 0, 0, 0, time.UTC)
+
+	t.Run("valid", func(t *testing.T) {
+		dr, err := NewDateRange(start, end)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !dr.Start.Equal(start) || !dr.End.Equal(end) {
+			t.Errorf("got %v, want start=%v end=%v", dr, start, end)
+		}
+	})
+
+	t.Run("invalid - start after end", func(t *testing.T) {
+		_, err := NewDateRange(end, start)
+		if err == nil {
+			t.Error("expected error for start after end")
+		}
+	})
+
+	t.Run("invalid - same time", func(t *testing.T) {
+		_, err := NewDateRange(start, start)
+		if err == nil {
+			t.Error("expected error for same start and end")
+		}
+	})
+}
+
+func TestCalendarYear(t *testing.T) {
+	dr := CalendarYear(2025)
+
+	wantStart := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	wantEnd := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	if !dr.Start.Equal(wantStart) {
+		t.Errorf("Start = %v, want %v", dr.Start, wantStart)
+	}
+	if !dr.End.Equal(wantEnd) {
+		t.Errorf("End = %v, want %v", dr.End, wantEnd)
+	}
+}
+
+func TestRollingYearFrom(t *testing.T) {
+	start := time.Date(2025, 2, 20, 10, 30, 0, 0, time.UTC)
+	dr := RollingYearFrom(start)
+
+	wantEnd := time.Date(2026, 2, 20, 10, 30, 0, 0, time.UTC)
+
+	if !dr.Start.Equal(start) {
+		t.Errorf("Start = %v, want %v", dr.Start, start)
+	}
+	if !dr.End.Equal(wantEnd) {
+		t.Errorf("End = %v, want %v", dr.End, wantEnd)
+	}
+}
+
+func TestDateRange_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		dr      DateRange
+		wantErr bool
+	}{
+		{
+			"valid",
+			DateRange{
+				Start: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+				End:   time.Date(2025, 12, 31, 0, 0, 0, 0, time.UTC),
+			},
+			false,
+		},
+		{
+			"invalid - start equals end",
+			DateRange{
+				Start: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+				End:   time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+			},
+			true,
+		},
+		{
+			"invalid - start after end",
+			DateRange{
+				Start: time.Date(2025, 12, 31, 0, 0, 0, 0, time.UTC),
+				End:   time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+			},
+			true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.dr.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestDateRange_IsZero(t *testing.T) {
+	t.Run("zero", func(t *testing.T) {
+		dr := DateRange{}
+		if !dr.IsZero() {
+			t.Error("expected IsZero() = true for zero value")
+		}
+	})
+
+	t.Run("non-zero start", func(t *testing.T) {
+		dr := DateRange{Start: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}
+		if dr.IsZero() {
+			t.Error("expected IsZero() = false when Start is set")
+		}
+	})
+
+	t.Run("non-zero end", func(t *testing.T) {
+		dr := DateRange{End: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}
+		if dr.IsZero() {
+			t.Error("expected IsZero() = false when End is set")
+		}
+	})
+}
+
+func TestDateRange_Duration(t *testing.T) {
+	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2025, 1, 8, 0, 0, 0, 0, time.UTC)
+	dr := DateRange{Start: start, End: end}
+
+	want := 7 * 24 * time.Hour
+	if got := dr.Duration(); got != want {
+		t.Errorf("Duration() = %v, want %v", got, want)
+	}
+}
+
+func TestDateRange_Contains(t *testing.T) {
+	dr := DateRange{
+		Start: time.Date(2025, 2, 20, 0, 0, 0, 0, time.UTC),
+		End:   time.Date(2026, 2, 20, 0, 0, 0, 0, time.UTC),
+	}
+
+	tests := []struct {
+		name string
+		t    time.Time
+		want bool
+	}{
+		{"at start", time.Date(2025, 2, 20, 0, 0, 0, 0, time.UTC), true},
+		{"middle", time.Date(2025, 8, 15, 12, 0, 0, 0, time.UTC), true},
+		{"just before end", time.Date(2026, 2, 19, 23, 59, 59, 0, time.UTC), true},
+		{"at end (exclusive)", time.Date(2026, 2, 20, 0, 0, 0, 0, time.UTC), false},
+		{"before start", time.Date(2025, 2, 19, 23, 59, 59, 0, time.UTC), false},
+		{"after end", time.Date(2026, 2, 21, 0, 0, 0, 0, time.UTC), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := dr.Contains(tt.t); got != tt.want {
+				t.Errorf("Contains(%v) = %v, want %v", tt.t, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDateRange_ContainsInclusive(t *testing.T) {
+	dr := DateRange{
+		Start: time.Date(2025, 2, 20, 0, 0, 0, 0, time.UTC),
+		End:   time.Date(2026, 2, 20, 0, 0, 0, 0, time.UTC),
+	}
+
+	tests := []struct {
+		name string
+		t    time.Time
+		want bool
+	}{
+		{"at start", time.Date(2025, 2, 20, 0, 0, 0, 0, time.UTC), true},
+		{"middle", time.Date(2025, 8, 15, 12, 0, 0, 0, time.UTC), true},
+		{"at end (inclusive)", time.Date(2026, 2, 20, 0, 0, 0, 0, time.UTC), true},
+		{"before start", time.Date(2025, 2, 19, 23, 59, 59, 0, time.UTC), false},
+		{"after end", time.Date(2026, 2, 20, 0, 0, 1, 0, time.UTC), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := dr.ContainsInclusive(tt.t); got != tt.want {
+				t.Errorf("ContainsInclusive(%v) = %v, want %v", tt.t, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDateRange_Overlaps(t *testing.T) {
+	dr := DateRange{
+		Start: time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC),
+		End:   time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	tests := []struct {
+		name  string
+		other DateRange
+		want  bool
+	}{
+		{
+			"no overlap - before",
+			DateRange{
+				Start: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+				End:   time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC),
+			},
+			false,
+		},
+		{
+			"no overlap - after",
+			DateRange{
+				Start: time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC),
+				End:   time.Date(2025, 9, 1, 0, 0, 0, 0, time.UTC),
+			},
+			false,
+		},
+		{
+			"overlap - partial start",
+			DateRange{
+				Start: time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC),
+				End:   time.Date(2025, 4, 1, 0, 0, 0, 0, time.UTC),
+			},
+			true,
+		},
+		{
+			"overlap - partial end",
+			DateRange{
+				Start: time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC),
+				End:   time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC),
+			},
+			true,
+		},
+		{
+			"overlap - contained",
+			DateRange{
+				Start: time.Date(2025, 4, 1, 0, 0, 0, 0, time.UTC),
+				End:   time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC),
+			},
+			true,
+		},
+		{
+			"overlap - contains",
+			DateRange{
+				Start: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+				End:   time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC),
+			},
+			true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := dr.Overlaps(tt.other); got != tt.want {
+				t.Errorf("Overlaps(%v) = %v, want %v", tt.other, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDateRange_NextAnnualPeriod(t *testing.T) {
+	dr := DateRange{
+		Start: time.Date(2025, 2, 20, 10, 30, 0, 0, time.UTC),
+		End:   time.Date(2026, 2, 20, 10, 30, 0, 0, time.UTC),
+	}
+
+	next := dr.NextAnnualPeriod()
+
+	wantStart := time.Date(2026, 2, 20, 10, 30, 0, 0, time.UTC)
+	wantEnd := time.Date(2027, 2, 20, 10, 30, 0, 0, time.UTC)
+
+	if !next.Start.Equal(wantStart) {
+		t.Errorf("NextAnnualPeriod().Start = %v, want %v", next.Start, wantStart)
+	}
+	if !next.End.Equal(wantEnd) {
+		t.Errorf("NextAnnualPeriod().End = %v, want %v", next.End, wantEnd)
+	}
+}
+
+func TestDateRange_RollingPeriodScenario(t *testing.T) {
+	// Test the scenario from the requirements:
+	// Campaign starts 02/11/25
+	// Patient A first alert: 02/20/25 → period: 02/20/25 to 02/20/26
+	// Patient A hits max ~12/01/25, blocked until period expires
+	// Period expires 02/20/26
+	// Patient A next alert: 03/30/26 → new period: 03/30/26 to 03/30/27
+
+	// First period
+	firstAlert := time.Date(2025, 2, 20, 0, 0, 0, 0, time.UTC)
+	period1 := RollingYearFrom(firstAlert)
+
+	// Verify first period
+	if !period1.Start.Equal(firstAlert) {
+		t.Errorf("period1.Start = %v, want %v", period1.Start, firstAlert)
+	}
+	expectedEnd1 := time.Date(2026, 2, 20, 0, 0, 0, 0, time.UTC)
+	if !period1.End.Equal(expectedEnd1) {
+		t.Errorf("period1.End = %v, want %v", period1.End, expectedEnd1)
+	}
+
+	// Check that 12/01/25 is within period1
+	dec1 := time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC)
+	if !period1.Contains(dec1) {
+		t.Errorf("period1 should contain %v", dec1)
+	}
+
+	// Check that 03/30/26 is NOT within period1 (period expired)
+	mar30 := time.Date(2026, 3, 30, 0, 0, 0, 0, time.UTC)
+	if period1.Contains(mar30) {
+		t.Errorf("period1 should NOT contain %v (period expired)", mar30)
+	}
+
+	// New period starts from next alert
+	period2 := RollingYearFrom(mar30)
+	expectedEnd2 := time.Date(2027, 3, 30, 0, 0, 0, 0, time.UTC)
+	if !period2.Start.Equal(mar30) {
+		t.Errorf("period2.Start = %v, want %v", period2.Start, mar30)
+	}
+	if !period2.End.Equal(expectedEnd2) {
+		t.Errorf("period2.End = %v, want %v", period2.End, expectedEnd2)
+	}
+}

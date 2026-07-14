@@ -31,7 +31,7 @@ This library uses semantic versioning (`vX.Y.Z`). Tags are automatically created
 | [raslocation](#raslocation) | Operating hours and scheduling | [README](raslocation/README.md) |
 | [raslogging](#raslogging) | HTTP logging middleware | [README](raslogging/README.md) |
 | [rasstack](#rasstack) | Middleware composition | [README](rasstack/README.md) |
-| [rastime](#rastime) | TimeOfDay and schedule types | [README](rastime/README.md) |
+| [rastime](#rastime) | TimeOfDay, DateRange, and schedule types | [README](rastime/README.md) |
 | [rasvalidation](#rasvalidation) | UUID, email, phone, NPI validators | [README](rasvalidation/README.md) |
 | [rasworker](#rasworker) | Worker pool with graceful shutdown | [README](rasworker/README.md) |
 
@@ -246,7 +246,7 @@ duration := rasconversion.ConvertFromPgtypeIntervalOrDefault(pgInterval, time.Ho
 
 ## rastime
 
-Time-of-day utilities for schedule management. Provides `TimeOfDay` (hour/minute without date), `TimeRange` (start/end windows), and `DayOfWeek` constants with validation, comparison, and JSON serialization.
+Time-of-day utilities for schedule management. Provides `TimeOfDay` (hour/minute without date), `TimeRange` (start/end windows), `DateRange` (date/time periods), and `DayOfWeek` constants with validation, comparison, and JSON serialization.
 
 ```go
 import "github.com/transactrx/ras-utils/rastime"
@@ -295,6 +295,16 @@ fmt.Println(day.Short())   // "Mon"
 
 // JSON marshaling (TimeOfDay serializes as "HH:MM" string)
 data, _ := json.Marshal(tod)  // "09:30"
+
+// DateRange for date/time periods
+dr := rastime.CalendarYear(2025)              // Jan 1 2025 to Jan 1 2026
+dr := rastime.RollingYearFrom(firstAlert)     // 1 year from a date
+dr, err := rastime.NewDateRange(start, end)   // with validation
+
+if dr.Contains(t) { }           // half-open [Start, End)
+if dr.ContainsInclusive(t) { }  // closed [Start, End]
+if dr.Overlaps(other) { }       // check overlap
+nextPeriod := dr.NextAnnualPeriod()  // shift forward 1 year
 ```
 
 ## raslocation
