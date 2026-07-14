@@ -111,7 +111,7 @@ dr := rastime.CalendarYear(2025)
 
 // Create a rolling year from a specific date
 firstAlert := time.Date(2025, 2, 20, 0, 0, 0, 0, time.UTC)
-dr := rastime.RollingYearFrom(firstAlert)
+dr := rastime.AnnualPeriodFrom(firstAlert)
 
 // Create with validation
 dr, err := rastime.NewDateRange(start, end)
@@ -145,7 +145,7 @@ if dr.IsZero() { ... }  // both times are zero
 // Period expires after 1 year, next alert starts a new period
 
 firstAlert := time.Date(2025, 2, 20, 0, 0, 0, 0, time.UTC)
-period1 := rastime.RollingYearFrom(firstAlert)
+period1 := rastime.AnnualPeriodFrom(firstAlert)
 // period1: 2025-02-20 to 2026-02-20
 
 // Check if a date is in the period
@@ -156,6 +156,6 @@ period1.Contains(dec1)  // true
 mar30 := time.Date(2026, 3, 30, 0, 0, 0, 0, time.UTC)
 period1.Contains(mar30)  // false (period expired)
 
-period2 := rastime.RollingYearFrom(mar30)
+period2 := rastime.AnnualPeriodFrom(mar30)
 // period2: 2026-03-30 to 2027-03-30
 ```

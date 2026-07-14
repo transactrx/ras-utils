@@ -467,9 +467,9 @@ func TestCalendarYear(t *testing.T) {
 	}
 }
 
-func TestRollingYearFrom(t *testing.T) {
+func TestAnnualPeriodFrom(t *testing.T) {
 	start := time.Date(2025, 2, 20, 10, 30, 0, 0, time.UTC)
-	dr := RollingYearFrom(start)
+	dr := AnnualPeriodFrom(start)
 
 	wantEnd := time.Date(2026, 2, 20, 10, 30, 0, 0, time.UTC)
 
@@ -711,7 +711,7 @@ func TestDateRange_RollingPeriodScenario(t *testing.T) {
 
 	// First period
 	firstAlert := time.Date(2025, 2, 20, 0, 0, 0, 0, time.UTC)
-	period1 := RollingYearFrom(firstAlert)
+	period1 := AnnualPeriodFrom(firstAlert)
 
 	// Verify first period
 	if !period1.Start.Equal(firstAlert) {
@@ -735,7 +735,7 @@ func TestDateRange_RollingPeriodScenario(t *testing.T) {
 	}
 
 	// New period starts from next alert
-	period2 := RollingYearFrom(mar30)
+	period2 := AnnualPeriodFrom(mar30)
 	expectedEnd2 := time.Date(2027, 3, 30, 0, 0, 0, 0, time.UTC)
 	if !period2.Start.Equal(mar30) {
 		t.Errorf("period2.Start = %v, want %v", period2.Start, mar30)
@@ -918,7 +918,7 @@ func TestDateRange_TimezoneMixedComparisons(t *testing.T) {
 	t.Run("DST transition handling", func(t *testing.T) {
 		// March 9, 2025 is when DST starts in US (clocks spring forward at 2am)
 		// Create a range that spans the DST transition
-		drDST := RollingYearFrom(time.Date(2025, 3, 9, 1, 30, 0, 0, nyLoc))
+		drDST := AnnualPeriodFrom(time.Date(2025, 3, 9, 1, 30, 0, 0, nyLoc))
 
 		// The range should still work correctly
 		if drDST.Start.IsZero() || drDST.End.IsZero() {

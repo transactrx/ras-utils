@@ -298,7 +298,7 @@ data, _ := json.Marshal(tod)  // "09:30"
 
 // DateRange for date/time periods
 dr := rastime.CalendarYear(2025)              // Jan 1 2025 to Jan 1 2026
-dr := rastime.RollingYearFrom(firstAlert)     // 1 year from a date
+dr := rastime.AnnualPeriodFrom(firstAlert)    // 1 year from a date
 dr, err := rastime.NewDateRange(start, end)   // with validation
 
 if dr.Contains(t) { }           // half-open [Start, End)

@@ -77,8 +77,8 @@ func CalendarYear(year int) DateRange {
 	}
 }
 
-// RollingYearFrom returns a DateRange starting at the given time and ending 1 year later.
-func RollingYearFrom(start time.Time) DateRange {
+// AnnualPeriodFrom returns a DateRange starting at the given time and ending 1 year later.
+func AnnualPeriodFrom(start time.Time) DateRange {
 	return DateRange{
 		Start: start,
 		End:   start.AddDate(1, 0, 0),
