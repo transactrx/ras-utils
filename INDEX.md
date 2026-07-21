@@ -49,25 +49,3 @@ rastime ← raslocation
 | Validate NPI | `rasvalidation` | `IsValidNPI` |
 | Worker pool | `rasworker` | `NewPool`, `Submit` |
 | OAuth token | `rasauth` | `GetToken` |
-
-## Build Commands
-
-```bash
-go mod tidy          # sync dependencies
-go build ./...       # build all
-go test ./...        # test all
-go test -v ./rascache  # test one package
-```
-
-## Code Search
-
-```bash
-# Function definitions
-ast-grep --lang go -p 'func $NAME($$$) $$$'
-
-# Struct definitions
-ast-grep --lang go -p 'type $NAME struct { $$$ }'
-
-# Find text
-rg "pattern" --type go
-```
