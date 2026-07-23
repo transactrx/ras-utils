@@ -56,6 +56,15 @@ user, ok := c.GetOrStore("user:123", func() (User, time.Time, bool) {
     return user, time.Now().Add(5*time.Minute), true
 })
 
+// Cache-through with error handling (TTL as duration)
+user, err := c.GetOrStoreWithError("user:123", func() (User, time.Duration, error) {
+    user, err := db.GetUser(123)
+    if err != nil {
+        return User{}, 0, err
+    }
+    return user, 5*time.Minute, nil
+})
+
 // Delete and Clear
 c.Delete("user:123")
 c.Clear()
@@ -79,6 +88,19 @@ func GetAuthToken() (string, bool) {
         return token.AccessToken, expiry, true
     })
 }
+
+// Or using GetOrStoreWithError with TTL duration
+func GetAuthTokenWithError() (string, error) {
+    return tokenCache.GetOrStoreWithError("auth_token", func() (string, time.Duration, error) {
+        token, err := fetchTokenFromAuthServer()
+        if err != nil {
+            return "", 0, err
+        }
+        // Cache for half the token lifetime
+        ttl := time.Duration(token.ExpiresIn/2) * time.Second
+        return token.AccessToken, ttl, nil
+    })
+}
 ```
 
 ## API Reference
@@ -98,7 +120,13 @@ func GetAuthToken() (string, bool) {
 
 - `Set(key K, value V, expiry time.Time)` - Store a value with expiration
 - `Get(key K) (V, bool)` - Retrieve a value
-- `GetOrStore(key K, fn func() (V, time.Time, bool)) (V, bool)` - Get or compute value
+- `GetOrStore(key K, fn StoreCacheCallback[V]) (V, bool)` - Get or fetch value with absolute expiry
+- `GetOrStoreWithError(key K, fn StoreCacheCallbackWithError[V]) (V, error)` - Get or fetch value with TTL duration and error handling
 - `Delete(key K)` - Remove a value
 - `Clear()` - Remove all values
 - `Stop()` - Stop background cleanup goroutine
+
+### Callback Types
+
+- `StoreCacheCallback[T] func() (T, time.Time, bool)` - Returns value, absolute expiry time, success flag
+- `StoreCacheCallbackWithError[T] func() (T, time.Duration, error)` - Returns value, TTL duration, error

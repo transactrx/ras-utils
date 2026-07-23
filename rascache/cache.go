@@ -105,6 +105,7 @@ type Cache[K comparable, T any] struct {
 	stopCh  chan struct{}                    // signal to stop background cleanup
 	newItem func(T, time.Time) ICacheable[T] // factory for creating cache items
 	group   singleflight.Group               // deduplicates concurrent fetches in GetOrStore
+	useUTC  bool                             // time mode for TTL calculations
 }
 
 // cacheConfig holds configuration for a Cache instance.
@@ -139,7 +140,8 @@ func NewCache[K comparable, T any](opts ...CacheOption) *Cache[K, T] {
 	}
 
 	c := &Cache[K, T]{
-		data: make(map[K]ICacheable[T]),
+		data:   make(map[K]ICacheable[T]),
+		useUTC: cfg.useUTC,
 	}
 
 	if cfg.useUTC {
@@ -242,14 +244,49 @@ func (c *Cache[K, T]) Clear() {
 	c.data = make(map[K]ICacheable[T])
 }
 
+// now returns the current time in the cache's configured time mode.
+func (c *Cache[K, T]) now() time.Time {
+	if c.useUTC {
+		return time.Now().UTC()
+	}
+	return time.Now()
+}
+
 // StoreCacheOperation is a function that fetches a value to cache on miss.
 // Returns the cacheable item and true on success, or zero value and false on failure.
 // Deprecated: Use GetOrStore with StoreCacheCallback instead.
 type StoreCacheOperation[T any] func() (CacheItem[T], bool)
 
-// StoreCacheOperation is a function that fetches a value to cache on miss.
-// Returns the cacheable item, expiration, and true on success, or zero value, zero value and false on failure.
+// StoreCacheCallback is a function that fetches a value to cache on miss.
+// It returns the value, its absolute expiration time, and true on success.
+// On failure, it returns zero values and false; the value will not be cached.
+//
+// Example:
+//
+//	val, ok := cache.GetOrStore("user:123", func() (User, time.Time, bool) {
+//	    user, err := db.GetUser(123)
+//	    if err != nil {
+//	        return User{}, time.Time{}, false
+//	    }
+//	    return user, time.Now().Add(5*time.Minute), true
+//	})
 type StoreCacheCallback[T any] func() (T, time.Time, bool)
+
+// StoreCacheCallbackWithError is a function that fetches a value to cache on miss.
+// It returns the value, a TTL duration, and an error. On success (nil error),
+// the value is cached with expiration set to now + TTL. On failure, the error
+// is returned and nothing is cached.
+//
+// Example:
+//
+//	val, err := cache.GetOrStoreWithError("user:123", func() (User, time.Duration, error) {
+//	    user, err := db.GetUser(123)
+//	    if err != nil {
+//	        return User{}, 0, err
+//	    }
+//	    return user, 5*time.Minute, nil
+//	})
+type StoreCacheCallbackWithError[T any] func() (T, time.Duration, error)
 
 // Deprecated: Use GetOrStore with StoreCacheCallback instead.
 func (c *Cache[K, T]) TryGet(key K, storeOperation StoreCacheOperation[T]) (T, bool) {
@@ -259,41 +296,77 @@ func (c *Cache[K, T]) TryGet(key K, storeOperation StoreCacheOperation[T]) (T, b
 	})
 }
 
-// getOrStoreResult wraps the result of a singleflight call for GetOrStore.
-type getOrStoreResult[T any] struct {
-	value      T
-	expiration time.Time
-	ok         bool
-}
-
-// GetOrStore retrieves a cached value or fetches and stores it on miss.
-// Concurrent calls for the same key will share a single fetch operation,
-// preventing thundering herd on cache miss.
-func (c *Cache[K, T]) GetOrStore(key K, storeOperation StoreCacheCallback[T]) (T, bool) {
+// getOrStoreInternal is the shared singleflight logic for GetOrStore variants.
+// The fetch callback returns (value, expiry, error) — nil error means success.
+func (c *Cache[K, T]) getOrStoreInternal(key K, fetch func() (T, time.Time, error)) (T, error) {
 	// Fast path: return cached value if present
 	if cachedValue, isCached := c.Get(key); isCached {
-		return cachedValue, true
+		return cachedValue, nil
 	}
 
 	// Slow path: use singleflight to ensure only one goroutine fetches
 	keyStr := fmt.Sprintf("%v", key)
-	resultIface, _, _ := c.group.Do(keyStr, func() (interface{}, error) {
+	resultIface, err, _ := c.group.Do(keyStr, func() (any, error) {
 		// Double-check cache inside singleflight - another goroutine may have populated it
 		if cachedValue, isCached := c.Get(key); isCached {
-			return getOrStoreResult[T]{value: cachedValue, ok: true}, nil
+			return cachedValue, nil
 		}
 
-		if newValue, expiration, successful := storeOperation(); successful {
-			c.Set(key, newValue, expiration)
-			return getOrStoreResult[T]{value: newValue, expiration: expiration, ok: true}, nil
+		newValue, expiry, err := fetch()
+		if err != nil {
+			return nil, err
 		}
-
-		return getOrStoreResult[T]{ok: false}, nil
+		c.Set(key, newValue, expiry)
+		return newValue, nil
 	})
 
-	result := resultIface.(getOrStoreResult[T])
-	if !result.ok {
-		return zeroVal[T](), false
+	if err != nil {
+		return zeroVal[T](), err
 	}
-	return result.value, true
+	return resultIface.(T), nil
+}
+
+// GetOrStore retrieves a cached value or fetches and stores it on miss.
+// If the key exists and is not expired, returns the cached value immediately.
+// Otherwise, calls storeOperation to fetch the value; on success, caches it
+// with the returned expiration time.
+//
+// Concurrent calls for the same key share a single fetch operation via
+// singleflight, preventing thundering herd on cache miss.
+//
+// Returns the value and true on success, or zero value and false if the
+// store operation fails.
+func (c *Cache[K, T]) GetOrStore(key K, storeOperation StoreCacheCallback[T]) (T, bool) {
+	val, err := c.getOrStoreInternal(key, func() (T, time.Time, error) {
+		v, exp, ok := storeOperation()
+		if !ok {
+			return zeroVal[T](), time.Time{}, errStoreFailed
+		}
+		return v, exp, nil
+	})
+	return val, err == nil
+}
+
+// errStoreFailed is a sentinel error for GetOrStore's bool-based callback.
+var errStoreFailed = fmt.Errorf("store operation failed")
+
+// GetOrStoreWithError retrieves a cached value or fetches and stores it on miss.
+// If the key exists and is not expired, returns the cached value immediately.
+// Otherwise, calls storeOperation to fetch the value; on success (nil error),
+// caches it with expiration set to now + TTL duration, using the cache's
+// configured time mode (local or UTC via WithUTC).
+//
+// Concurrent calls for the same key share a single fetch operation via
+// singleflight, preventing thundering herd on cache miss.
+//
+// Returns the value and nil on success, or zero value and the error from
+// storeOperation on failure.
+func (c *Cache[K, T]) GetOrStoreWithError(key K, storeOperation StoreCacheCallbackWithError[T]) (T, error) {
+	return c.getOrStoreInternal(key, func() (T, time.Time, error) {
+		v, ttl, err := storeOperation()
+		if err != nil {
+			return zeroVal[T](), time.Time{}, err
+		}
+		return v, c.now().Add(ttl), nil
+	})
 }

@@ -1,6 +1,7 @@
 package rascache
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -514,5 +515,140 @@ func TestCacheItemUTC_getTtl(t *testing.T) {
 	ttl := item.getTtl()
 	if ttl < 59*time.Minute || ttl > time.Hour {
 		t.Errorf("expected TTL around 1 hour, got %v", ttl)
+	}
+}
+
+func TestCache_GetOrStoreWithError_CacheHit(t *testing.T) {
+	c := NewCache[string, string]()
+	c.Set("key", "cached_value", time.Now().Add(time.Hour))
+
+	callCount := 0
+	val, err := c.GetOrStoreWithError("key", func() (string, time.Duration, error) {
+		callCount++
+		return "fetched_value", time.Hour, nil
+	})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if val != "cached_value" {
+		t.Errorf("expected cached_value, got %s", val)
+	}
+	if callCount != 0 {
+		t.Errorf("expected store function not to be called on cache hit, called %d times", callCount)
+	}
+}
+
+func TestCache_GetOrStoreWithError_CacheMiss(t *testing.T) {
+	c := NewCache[string, string]()
+
+	callCount := 0
+	val, err := c.GetOrStoreWithError("key", func() (string, time.Duration, error) {
+		callCount++
+		return "fetched_value", time.Hour, nil
+	})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if val != "fetched_value" {
+		t.Errorf("expected fetched_value, got %s", val)
+	}
+	if callCount != 1 {
+		t.Errorf("expected store function to be called once, called %d times", callCount)
+	}
+
+	// Verify value is now cached
+	val, ok := c.Get("key")
+	if !ok {
+		t.Fatal("expected value to be cached after GetOrStoreWithError")
+	}
+	if val != "fetched_value" {
+		t.Errorf("expected fetched_value in cache, got %s", val)
+	}
+}
+
+func TestCache_GetOrStoreWithError_StoreOperationFails(t *testing.T) {
+	c := NewCache[string, string]()
+	expectedErr := fmt.Errorf("fetch failed")
+
+	val, err := c.GetOrStoreWithError("key", func() (string, time.Duration, error) {
+		return "", 0, expectedErr
+	})
+
+	if err == nil {
+		t.Fatal("expected GetOrStoreWithError to fail when store operation fails")
+	}
+	if err.Error() != expectedErr.Error() {
+		t.Errorf("expected error %v, got %v", expectedErr, err)
+	}
+	if val != "" {
+		t.Errorf("expected zero value, got %s", val)
+	}
+
+	// Verify nothing was cached
+	_, ok := c.Get("key")
+	if ok {
+		t.Error("expected no value to be cached after failed store operation")
+	}
+}
+
+func TestCache_GetOrStoreWithError_Singleflight(t *testing.T) {
+	c := NewCache[string, string]()
+	var fetchCount atomic.Int32
+	var wg sync.WaitGroup
+
+	// Simulate 50 concurrent requests all hitting cache miss simultaneously
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			val, err := c.GetOrStoreWithError("token", func() (string, time.Duration, error) {
+				fetchCount.Add(1)
+				time.Sleep(10 * time.Millisecond) // Simulate slow fetch
+				return "fetched_token", time.Hour, nil
+			})
+			if err != nil || val != "fetched_token" {
+				t.Errorf("unexpected result: err=%v, val=%s", err, val)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Singleflight should ensure only ONE fetch happened despite 50 concurrent calls
+	count := fetchCount.Load()
+	if count != 1 {
+		t.Errorf("expected exactly 1 fetch due to singleflight, got %d", count)
+	}
+}
+
+func TestCache_GetOrStoreWithError_UsesTTLDuration(t *testing.T) {
+	c := NewCache[string, string](WithUTC())
+
+	before := time.Now().UTC()
+	val, err := c.GetOrStoreWithError("key", func() (string, time.Duration, error) {
+		return "value", 30 * time.Minute, nil
+	})
+	after := time.Now().UTC()
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if val != "value" {
+		t.Errorf("expected value, got %s", val)
+	}
+
+	// Verify TTL was applied correctly
+	c.mu.RLock()
+	item := c.data["key"]
+	c.mu.RUnlock()
+
+	expiry := item.getExpiration()
+	expectedMin := before.Add(30 * time.Minute)
+	expectedMax := after.Add(30 * time.Minute)
+
+	if expiry.Before(expectedMin) || expiry.After(expectedMax) {
+		t.Errorf("expected expiry between %v and %v, got %v", expectedMin, expectedMax, expiry)
 	}
 }
