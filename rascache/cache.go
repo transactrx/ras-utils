@@ -299,6 +299,11 @@ func (c *Cache[K, T]) TryGet(key K, storeOperation StoreCacheOperation[T]) (T, b
 
 // getOrStoreInternal is the shared singleflight logic for GetOrStore variants.
 // The fetch callback returns (value, expiry, error) — nil error means success.
+//
+// Note: Concurrent callers for the same key share both the result AND any error
+// from the single fetch operation. If the fetch fails due to a transient error
+// (e.g., network blip), all waiting goroutines receive that same error. Callers
+// needing retry logic should implement it outside this method.
 func (c *Cache[K, T]) getOrStoreInternal(key K, fetch func() (T, time.Time, error)) (T, error) {
 	// Fast path: return cached value if present
 	if cachedValue, isCached := c.Get(key); isCached {
@@ -321,8 +326,13 @@ func (c *Cache[K, T]) getOrStoreInternal(key K, fetch func() (T, time.Time, erro
 		return newValue, nil
 	})
 
+	// singleflight returns (nil, err) on fetch failure, so check error first
+	// to avoid type assertion panic on nil resultIface
 	if err != nil {
 		return zeroVal[T](), err
+	}
+	if resultIface == nil {
+		return zeroVal[T](), nil
 	}
 	return resultIface.(T), nil
 }
@@ -333,7 +343,9 @@ func (c *Cache[K, T]) getOrStoreInternal(key K, fetch func() (T, time.Time, erro
 // with the returned expiration time.
 //
 // Concurrent calls for the same key share a single fetch operation via
-// singleflight, preventing thundering herd on cache miss.
+// singleflight, preventing thundering herd on cache miss. Note that if the
+// fetch fails, all waiting callers receive the same failure; implement retry
+// logic outside this method if needed.
 //
 // Returns the value and true on success, or zero value and false if the
 // store operation fails.
@@ -358,7 +370,9 @@ var errStoreFailed = errors.New("store operation failed")
 // configured time mode (local or UTC via WithUTC).
 //
 // Concurrent calls for the same key share a single fetch operation via
-// singleflight, preventing thundering herd on cache miss.
+// singleflight, preventing thundering herd on cache miss. Note that if the
+// fetch fails, all waiting callers receive the same error; implement retry
+// logic outside this method if needed.
 //
 // Returns the value and nil on success, or zero value and the error from
 // storeOperation on failure.

@@ -130,3 +130,16 @@ func GetAuthTokenWithError() (string, error) {
 
 - `StoreCacheCallback[T] func() (T, time.Time, bool)` - Returns value, absolute expiry time, success flag
 - `StoreCacheCallbackWithError[T] func() (T, time.Duration, error)` - Returns value, TTL duration, error
+
+## Notes
+
+### Time Mode and TTL
+
+The cache's time mode (`WithUTC()` or default local time) affects how expiration is calculated:
+
+- **`GetOrStore`**: You provide an absolute `time.Time` expiry, so ensure it matches your cache's time mode (use `time.Now().UTC()` for UTC caches)
+- **`GetOrStoreWithError`**: You provide a `time.Duration` TTL, which is added to the cache's internal `now()` (UTC or local depending on configuration)
+
+### Singleflight Behavior
+
+Both `GetOrStore` and `GetOrStoreWithError` use singleflight to deduplicate concurrent fetches for the same key. If the fetch operation fails (returns `false` or an error), **all waiting goroutines receive that same failure**. If you need retry logic for transient errors, implement it outside these methods or in your callback.

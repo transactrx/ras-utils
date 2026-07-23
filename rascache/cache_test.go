@@ -652,3 +652,91 @@ func TestCache_GetOrStoreWithError_UsesTTLDuration(t *testing.T) {
 		t.Errorf("expected expiry between %v and %v, got %v", expectedMin, expectedMax, expiry)
 	}
 }
+
+func TestCache_GetOrStore_NilPointerValue(t *testing.T) {
+	type User struct {
+		Name string
+	}
+	c := NewCache[string, *User]()
+
+	// Store a nil pointer value - should not panic
+	val, ok := c.GetOrStore("key", func() (*User, time.Time, bool) {
+		return nil, time.Now().Add(time.Hour), true
+	})
+
+	if !ok {
+		t.Fatal("expected GetOrStore to succeed even with nil value")
+	}
+	if val != nil {
+		t.Errorf("expected nil, got %v", val)
+	}
+
+	// Verify nil is cached and returned on subsequent calls
+	val, ok = c.Get("key")
+	if !ok {
+		t.Fatal("expected nil value to be cached")
+	}
+	if val != nil {
+		t.Errorf("expected cached nil, got %v", val)
+	}
+}
+
+func TestCache_GetOrStoreWithError_NilPointerValue(t *testing.T) {
+	type User struct {
+		Name string
+	}
+	c := NewCache[string, *User]()
+
+	// Store a nil pointer value - should not panic
+	val, err := c.GetOrStoreWithError("key", func() (*User, time.Duration, error) {
+		return nil, time.Hour, nil
+	})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if val != nil {
+		t.Errorf("expected nil, got %v", val)
+	}
+
+	// Verify nil is cached and returned on subsequent calls
+	val, ok := c.Get("key")
+	if !ok {
+		t.Fatal("expected nil value to be cached")
+	}
+	if val != nil {
+		t.Errorf("expected cached nil, got %v", val)
+	}
+}
+
+func TestCache_GetOrStore_NilInterfaceValue(t *testing.T) {
+	c := NewCache[string, any]()
+
+	// Store a nil interface value - should not panic
+	val, ok := c.GetOrStore("key", func() (any, time.Time, bool) {
+		return nil, time.Now().Add(time.Hour), true
+	})
+
+	if !ok {
+		t.Fatal("expected GetOrStore to succeed even with nil interface value")
+	}
+	if val != nil {
+		t.Errorf("expected nil, got %v", val)
+	}
+}
+
+func TestCache_GetOrStoreWithError_NilInterfaceValue(t *testing.T) {
+	c := NewCache[string, any]()
+
+	// Store a nil interface value - should not panic
+	val, err := c.GetOrStoreWithError("key", func() (any, time.Duration, error) {
+		return nil, time.Hour, nil
+	})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if val != nil {
+		t.Errorf("expected nil, got %v", val)
+	}
+}
