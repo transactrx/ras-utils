@@ -14,6 +14,7 @@
 package rascache
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -348,7 +349,7 @@ func (c *Cache[K, T]) GetOrStore(key K, storeOperation StoreCacheCallback[T]) (T
 }
 
 // errStoreFailed is a sentinel error for GetOrStore's bool-based callback.
-var errStoreFailed = fmt.Errorf("store operation failed")
+var errStoreFailed = errors.New("store operation failed")
 
 // GetOrStoreWithError retrieves a cached value or fetches and stores it on miss.
 // If the key exists and is not expired, returns the cached value immediately.
