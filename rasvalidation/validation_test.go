@@ -180,7 +180,6 @@ func TestIsValidMMDDYYYYDate(t *testing.T) {
 	}
 }
 
-
 func TestMaskPhone(t *testing.T) {
 	tests := []struct {
 		name  string

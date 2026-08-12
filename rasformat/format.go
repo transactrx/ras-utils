@@ -107,7 +107,8 @@ func MaskName(name string) string {
 	if name == "" {
 		return "****"
 	}
-	return string(name[0]) + "***"
+	runes := []rune(name)
+	return string(runes[0]) + "***"
 }
 
 // MaskFullName masks a full name (first + last) for logging.

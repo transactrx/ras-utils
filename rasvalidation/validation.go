@@ -114,7 +114,6 @@ func IsValidMMDDYYYYDate(s string) bool {
 	return IsValidDateString(s, "01/02/2006")
 }
 
-
 // MaskPhone masks a phone number for logging, showing only the last 4 digits.
 // Returns "***-***-XXXX" format for valid 10-digit numbers, or "****" for others.
 //
