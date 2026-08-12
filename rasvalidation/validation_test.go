@@ -179,3 +179,55 @@ func TestIsValidMMDDYYYYDate(t *testing.T) {
 		})
 	}
 }
+
+func TestMaskPhone(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"10 digits plain", "5551234567", "***-***-4567"},
+		{"with dashes", "555-123-4567", "***-***-4567"},
+		{"with dots", "555.123.4567", "***-***-4567"},
+		{"with parens", "(555)123-4567", "***-***-4567"},
+		{"with leading 1", "15551234567", "***-***-4567"},
+		{"with leading 1 and dashes", "1-555-123-4567", "***-***-4567"},
+		{"empty string", "", "****"},
+		{"too short", "123", "****"},
+		{"4 digits only", "4567", "***-***-4567"},
+		{"7 digits", "1234567", "***-***-4567"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := MaskPhone(tt.input); got != tt.want {
+				t.Errorf("MaskPhone(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMaskEmail(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"simple email", "john@example.com", "j***@example.com"},
+		{"single char local", "j@example.com", "j***@example.com"},
+		{"long local part", "johnathan.doe@example.com", "j***@example.com"},
+		{"with subdomain", "test@mail.example.com", "t***@mail.example.com"},
+		{"empty string", "", "****"},
+		{"no at sign", "testexample.com", "****"},
+		{"at sign at start", "@example.com", "****"},
+		{"only at sign", "@", "****"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := MaskEmail(tt.input); got != tt.want {
+				t.Errorf("MaskEmail(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}

@@ -27,6 +27,7 @@ This library uses semantic versioning (`vX.Y.Z`). Tags are automatically created
 | [rasconfig](#rasconfig) | Database pools and env helpers | [README](rasconfig/README.md) |
 | [rasconversion](#rasconversion) | pgtype ↔ Go type conversions | [README](rasconversion/README.md) |
 | [rasevents](#rasevents) | NATS event publishing | [README](rasevents/README.md) |
+| [rasformat](#rasformat) | PHI masking and string formatting | [README](rasformat/README.md) |
 | [rashttp](#rashttp) | HTTP request/response helpers | [README](rashttp/README.md) |
 | [raslocation](#raslocation) | Operating hours and scheduling | [README](raslocation/README.md) |
 | [raslogging](#raslogging) | HTTP logging middleware | [README](raslogging/README.md) |
@@ -481,6 +482,32 @@ handler := rasevents.NewEventsHandler(cfg, mockClient)
 - `EVENTS_TIMEOUT_SECONDS` - Request timeout in seconds (default: 60)
 - `EVENTS_WORKER_POOL_SIZE` - Async worker count (default: 50)
 - `EVENTS_QUEUE_SIZE` - Async queue size (default: 1000)
+
+## rasformat
+
+PHI-safe masking and string formatting utilities.
+
+```go
+import "github.com/transactrx/ras-utils/rasformat"
+
+// PHI masking for logs (safe to log without exposing sensitive data)
+rasformat.MaskPhone("5551234567")           // "***-***-4567"
+rasformat.MaskEmail("john@example.com")     // "j***@example.com"
+rasformat.MaskName("John")                  // "J***"
+rasformat.MaskFullName("John", "Smith")     // "J*** S***"
+rasformat.MaskDOB("1990-05-15")             // "****-**-15"
+
+// Phone formatting
+rasformat.NormalizePhone("(555) 123-4567")  // "5551234567" (digits only)
+rasformat.FormatPhoneParens("5551234567")   // "(555) 123-4567"
+rasformat.FormatPhoneDots("5551234567")     // "555.123.4567"
+rasformat.FormatPhoneDashes("5551234567")   // "555-123-4567"
+
+// Date normalization (multiple input formats → ISO 8601)
+rasformat.NormalizeDateISO("03/15/2024")              // "2024-03-15", nil
+rasformat.NormalizeDateISO("20240315")                // "2024-03-15", nil
+rasformat.NormalizeDateISO("2024-03-15T10:30:00Z")    // "2024-03-15", nil
+```
 
 ## rashttp
 

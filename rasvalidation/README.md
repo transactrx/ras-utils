@@ -5,11 +5,11 @@ Common validators for identifiers, contact info, and formatted strings.
 ## Features
 
 - UUID validation
-- Email format validation
-- Phone number normalization and validation
-- ZIP code validation
-- NPI (National Provider Identifier) validation with checksum
-- Date string parsing
+- Email format validation (RFC 5322)
+- US phone number validation
+- US ZIP code validation
+- NPI (National Provider Identifier) validation with Luhn checksum
+- Date string validation
 
 ## Installation
 
@@ -23,7 +23,7 @@ import "github.com/transactrx/ras-utils/rasvalidation"
 
 ```go
 if rasvalidation.IsValidUUID("550e8400-e29b-41d4-a716-446655440000") {
-    // valid UUID format
+    // valid UUID format, non-nil
 }
 ```
 
@@ -31,62 +31,71 @@ if rasvalidation.IsValidUUID("550e8400-e29b-41d4-a716-446655440000") {
 
 ```go
 if rasvalidation.IsValidEmail("user@example.com") {
-    // valid email format
+    // valid email format per RFC 5322
 }
 ```
 
 ### Phone Number
 
 ```go
-// Normalize phone number (strips non-digits)
-normalized := rasvalidation.NormalizePhone("(555) 123-4567")  // "5551234567"
-
-// Validate (checks for 10 digits after normalization)
-if rasvalidation.IsValidPhone("555-123-4567") {
-    // valid US phone number
+if rasvalidation.IsValidUSPhone("(555) 123-4567") {
+    // valid US phone number (10 digits, various formats accepted)
 }
 ```
 
 ### ZIP Code
 
 ```go
-// 5-digit ZIP
-if rasvalidation.IsValidZIP("12345") {
-    // valid
+if rasvalidation.IsValidUSZip("12345") {
+    // valid 5-digit ZIP
 }
 
-// ZIP+4
-if rasvalidation.IsValidZIP("12345-6789") {
-    // valid
+if rasvalidation.IsValidUSZip("12345-6789") {
+    // valid ZIP+4
 }
 ```
 
 ### NPI Validation
 
 ```go
-// Validates format and Luhn checksum
+// Format only (10 digits)
+if rasvalidation.IsValidNPIFormat("1234567893") {
+    // valid format
+}
+
+// Checksum only (assumes valid format)
+if rasvalidation.IsValidNPIChecksum("1234567893") {
+    // valid Luhn checksum
+}
+
+// Format + Luhn checksum
 if rasvalidation.IsValidNPI("1234567893") {
     // valid NPI
 }
 ```
 
-### Date Parsing
+### Date Validation
 
 ```go
-// Parse common date formats
-t, err := rasvalidation.ParseDate("2024-06-15")
-t, err := rasvalidation.ParseDate("06/15/2024")
-t, err := rasvalidation.ParseDate("June 15, 2024")
+// Generic date validation with custom layout
+if rasvalidation.IsValidDateString("2024-06-15", "2006-01-02") {
+    // valid for given layout
+}
+
+// ISO 8601 (YYYY-MM-DD)
+if rasvalidation.IsValidISO8601Date("2024-06-15") {
+    // valid
+}
+
+// MM/DD/YYYY
+if rasvalidation.IsValidMMDDYYYYDate("06/15/2024") {
+    // valid
+}
 ```
 
-## API Reference
+## Deprecated
 
-### Functions
+The following functions are deprecated. Use `rasformat` instead:
 
-- `IsValidUUID(s string) bool` - UUID format validation
-- `IsValidEmail(s string) bool` - Email format validation
-- `NormalizePhone(s string) string` - Strip non-digits from phone number
-- `IsValidPhone(s string) bool` - US phone number validation (10 digits)
-- `IsValidZIP(s string) bool` - US ZIP code validation (5 or 9 digit)
-- `IsValidNPI(s string) bool` - NPI validation with Luhn checksum
-- `ParseDate(s string) (time.Time, error)` - Parse common date formats
+- `MaskPhone` - use `rasformat.MaskPhone`
+- `MaskEmail` - use `rasformat.MaskEmail`
