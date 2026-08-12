@@ -10,6 +10,7 @@ Navigation map for LLM agents. Use this to find files by topic.
 | `rasconfig/` | DB pools, env helpers, Snowflake | `db.go`, `environment.go` |
 | `rasconversion/` | pgtype ↔ Go type conversions | `pgtypeHelpers.go` |
 | `rasevents/` | NATS event publishing | `eventsHandler.go` |
+| `rasformat/` | PHI masking, phone/date formatting | `format.go` |
 | `rashttp/` | HTTP request/response helpers | `http.go` |
 | `raslocation/` | Operating hours, timezone scheduling | `location.go` |
 | `raslogging/` | HTTP logging middleware | `logging.go` |
@@ -23,7 +24,7 @@ Navigation map for LLM agents. Use this to find files by topic.
 
 ```
 rastime ← raslocation
-    ↑
+rasformat ← rasvalidation (deprecated wrappers)
 (all others are independent)
 ```
 
@@ -40,6 +41,9 @@ rastime ← raslocation
 | Publish NATS event | `rasevents` | `SendEvent`, `SendEventAsync` |
 | JSON response | `rashttp` | `WriteJSON`, `OK`, `BadRequest` |
 | Decode JSON body | `rashttp` | `DecodeJSON` |
+| Mask PHI for logs | `rasformat` | `MaskPhone`, `MaskEmail`, `MaskName`, `MaskDOB` |
+| Format phone | `rasformat` | `FormatPhoneParens`, `FormatPhoneDots`, `FormatPhoneDashes` |
+| Normalize date to ISO | `rasformat` | `NormalizeDateISO` |
 | Check if location open | `raslocation` | `IsOpenAt`, `IsOpenAtZone` |
 | Request logging | `raslogging` | `LoggingMiddleware` |
 | Chain middleware | `rasstack` | `CreateStack` |

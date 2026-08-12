@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/transactrx/ras-utils/rasformat"
 )
 
 var (
@@ -111,4 +112,21 @@ func IsValidISO8601Date(s string) bool {
 // IsValidMMDDYYYYDate returns true if s is a valid MM/DD/YYYY date.
 func IsValidMMDDYYYYDate(s string) bool {
 	return IsValidDateString(s, "01/02/2006")
+}
+
+
+// MaskPhone masks a phone number for logging, showing only the last 4 digits.
+// Returns "***-***-XXXX" format for valid 10-digit numbers, or "****" for others.
+//
+// Deprecated: Use rasformat.MaskPhone instead.
+func MaskPhone(phone string) string {
+	return rasformat.MaskPhone(phone)
+}
+
+// MaskEmail masks an email address for logging, showing first char and domain.
+// Returns "j***@example.com" format, or "****" if invalid.
+//
+// Deprecated: Use rasformat.MaskEmail instead.
+func MaskEmail(email string) string {
+	return rasformat.MaskEmail(email)
 }
