@@ -270,6 +270,7 @@ func TestMaskWordsFixed(t *testing.T) {
 		{"zero visible", "Hello", 0, '*', 4, "****"},
 		{"custom mask", "Secret", 1, '#', 3, "S###"},
 		{"unicode", "José", 1, '*', 3, "J***"},
+		{"zero mask length falls back to word length", "Hello", 1, '*', 0, "H****"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
