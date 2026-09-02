@@ -12,7 +12,11 @@ rasformat.MaskEmail("john@example.com")     // "j***@example.com"
 rasformat.MaskName("John")                  // "J***"
 rasformat.MaskFullName("John", "Smith")     // "J*** S***"
 rasformat.MaskDOB("1990-05-15")             // "****-**-15"
+rasformat.MaskWords("John Smith", 1, '*')   // "J*** S****"
+rasformat.MaskWords("Secret Data", 2, '#')  // "Se#### Da##"
 ```
+
+`MaskWords` masks each word individually, showing only the first N characters and replacing the rest with the specified mask character. Handles unicode and multiple spaces.
 
 ## Phone Formatting
 

@@ -117,6 +117,38 @@ func MaskFullName(firstName, lastName string) string {
 	return MaskName(firstName) + " " + MaskName(lastName)
 }
 
+// MaskWords masks each word in a string, showing only the first visibleChars
+// characters of each word and replacing the rest with the mask character.
+// Words are separated by whitespace. Returns "****" if value is empty.
+func MaskWords(value string, visibleChars int, mask rune) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return string([]rune{mask, mask, mask, mask})
+	}
+	if visibleChars < 0 {
+		visibleChars = 0
+	}
+
+	words := strings.Fields(value)
+	masked := make([]string, len(words))
+
+	for i, word := range words {
+		runes := []rune(word)
+		if len(runes) <= visibleChars {
+			masked[i] = word
+			continue
+		}
+		var sb strings.Builder
+		sb.WriteString(string(runes[:visibleChars]))
+		for range runes[visibleChars:] {
+			sb.WriteRune(mask)
+		}
+		masked[i] = sb.String()
+	}
+
+	return strings.Join(masked, " ")
+}
+
 // MaskDOB masks a date of birth for logging, showing only the day.
 // Expects ISO format (YYYY-MM-DD). Returns "****-**-DD" or "****" if invalid.
 func MaskDOB(dob string) string {
