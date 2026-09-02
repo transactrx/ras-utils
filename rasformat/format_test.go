@@ -218,3 +218,34 @@ func TestMaskDOB(t *testing.T) {
 		})
 	}
 }
+
+func TestMaskWords(t *testing.T) {
+	tests := []struct {
+		name         string
+		value        string
+		visibleChars int
+		mask         rune
+		want         string
+	}{
+		{"single word", "Hello", 1, '*', "H****"},
+		{"two words", "John Smith", 1, '*', "J*** S****"},
+		{"show two chars", "Hello World", 2, '*', "He*** Wo***"},
+		{"custom mask", "Secret Data", 1, '#', "S##### D###"},
+		{"empty", "", 1, '*', "****"},
+		{"whitespace only", "   ", 1, '*', "****"},
+		{"word shorter than visible", "Hi", 3, '*', "Hi"},
+		{"word equal to visible", "Cat", 3, '*', "Cat"},
+		{"zero visible", "Hello", 0, '*', "*****"},
+		{"negative visible", "Hello", -1, '*', "*****"},
+		{"multiple spaces", "John    Smith", 1, '*', "J*** S****"},
+		{"unicode", "José María", 1, '*', "J*** M****"},
+		{"unicode mask", "Hello", 1, '█', "H████"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := MaskWords(tt.value, tt.visibleChars, tt.mask); got != tt.want {
+				t.Errorf("MaskWords(%q, %d, %q) = %q, want %q", tt.value, tt.visibleChars, tt.mask, got, tt.want)
+			}
+		})
+	}
+}
