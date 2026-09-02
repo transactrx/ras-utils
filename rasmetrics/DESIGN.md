@@ -87,6 +87,59 @@ func PprofHandler() http.Handler
 func Middleware(next http.Handler) http.Handler
 ```
 
+### rasworker Integration
+
+rasmetrics implements rasworker's `MetricsCollector` interface for automatic instrumentation.
+
+```go
+// Collector returns a MetricsCollector for use with rasworker.Pool.
+// Returns nil if rasmetrics has not been initialized.
+func Collector() rasworker.MetricsCollector
+```
+
+**Changes to rasworker** (separate PR):
+
+```go
+// In rasworker/worker.go
+
+// MetricsCollector receives worker pool lifecycle events.
+type MetricsCollector interface {
+    WorkerStarted(pool string)   // goroutine began processing
+    WorkerStopped(pool string)   // goroutine exited
+    JobQueued(pool string)       // job added to queue
+    JobStarted(pool string)      // job began execution
+    JobCompleted(pool string, err error)  // job finished (err may be nil)
+}
+
+// Option configures a Pool.
+type Option func(*Pool)
+
+// WithName sets the pool name for metrics and pprof labels.
+func WithName(name string) Option
+
+// WithMetrics enables metrics collection via the provided collector.
+func WithMetrics(mc MetricsCollector) Option
+
+// NewPool creates a worker pool with optional configuration.
+func NewPool(workers, queueSize int, opts ...Option) *Pool
+```
+
+**Usage:**
+
+```go
+// With rasmetrics integration
+pool := rasworker.NewPool(10, 100,
+    rasworker.WithName("kafka_consumers"),
+    rasworker.WithMetrics(rasmetrics.Collector()),
+)
+pool.Start()
+
+// Workers automatically:
+// - Increment/decrement {ns}_workers_active{pool="kafka_consumers"}
+// - Get pprof labels for leak detection
+// - Track jobs_queued, jobs_completed, job_errors
+```
+
 ## Metrics Exposed
 
 ### Runtime (when WithRuntimeMetrics enabled)
@@ -102,6 +155,10 @@ func Middleware(next http.Handler) http.Handler
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
 | `{ns}_workers_active` | Gauge | `pool` | Active workers per pool |
+| `{ns}_jobs_queued_total` | Counter | `pool` | Jobs added to queue |
+| `{ns}_jobs_completed_total` | Counter | `pool`, `status` | Jobs finished (status: success/error) |
+| `{ns}_job_duration_seconds` | Histogram | `pool` | Job execution time |
+| `{ns}_queue_depth` | Gauge | `pool` | Current jobs waiting in queue |
 
 ### HTTP (when WithHTTPMetrics + Middleware used)
 
@@ -173,6 +230,69 @@ func main() {
 }
 ```
 
+## Usage Example: rasworker Integration
+
+```go
+package main
+
+import (
+    "context"
+    "net/http"
+    "time"
+
+    "github.com/transactrx/ras-utils/rasmetrics"
+    "github.com/transactrx/ras-utils/rasworker"
+)
+
+func main() {
+    rasmetrics.Init(
+        rasmetrics.WithNamespace("clinicalplus"),
+        rasmetrics.WithRuntimeMetrics(),
+        rasmetrics.WithPprof(),
+    )
+
+    // Create instrumented worker pool
+    pool := rasworker.NewPool(10, 100,
+        rasworker.WithName("kafka_consumers"),
+        rasworker.WithMetrics(rasmetrics.Collector()),
+    )
+    pool.Start()
+    defer pool.Shutdown(context.Background())
+
+    // Submit jobs — metrics tracked automatically
+    pool.Submit(func(ctx context.Context) error {
+        // Process Kafka message
+        return nil
+    })
+
+    // HTTP
+    mux := http.NewServeMux()
+    mux.Handle("/metrics", rasmetrics.Handler())
+    mux.Handle("/debug/pprof/", rasmetrics.PprofHandler())
+    http.ListenAndServe(":8080", mux)
+}
+```
+
+Grafana queries for worker pools:
+
+```promql
+# Workers currently processing jobs
+clinicalplus_workers_active{pool="kafka_consumers"}
+
+# Job throughput
+rate(clinicalplus_jobs_completed_total{pool="kafka_consumers"}[5m])
+
+# Error rate
+rate(clinicalplus_jobs_completed_total{pool="kafka_consumers",status="error"}[5m])
+  / rate(clinicalplus_jobs_completed_total{pool="kafka_consumers"}[5m])
+
+# Queue depth (jobs waiting)
+clinicalplus_queue_depth{pool="kafka_consumers"}
+
+# Job duration p95
+histogram_quantile(0.95, rate(clinicalplus_job_duration_seconds_bucket{pool="kafka_consumers"}[5m]))
+```
+
 ## File Structure
 
 ```
@@ -183,6 +303,8 @@ rasmetrics/
 ├── metrics_test.go
 ├── workers.go      # WorkerPool type with pprof.Do integration
 ├── workers_test.go
+├── collector.go    # MetricsCollector impl for rasworker integration
+├── collector_test.go
 ├── http.go         # Handler, Middleware
 ├── http_test.go
 ├── pprof.go        # PprofHandler wrapping net/http/pprof
@@ -225,10 +347,23 @@ Leaked goroutines will show their `pool` label in the traceback header (Go 1.27+
 
 ## Implementation Plan
 
+Single PR containing both rasmetrics and rasworker changes.
+
+### rasmetrics (new package)
 1. `metrics.go` — Init, options, runtime metrics
 2. `workers.go` — WorkerPool gauge wrapper with pprof.Do integration
 3. `http.go` — Handler and Middleware
 4. `pprof.go` — PprofHandler exposing Go 1.27 endpoints
-5. Tests for each file
-6. README.md with examples
-7. Integration test in one service (rasUrlShortener recommended — smallest footprint)
+5. `collector.go` — MetricsCollector implementation
+6. Tests for each file
+7. README.md with examples
+
+### rasworker (updates)
+8. Add `MetricsCollector` interface
+9. Add `WithName()` and `WithMetrics()` options
+10. Update `Pool` to call collector hooks + apply pprof labels
+11. Update rasworker tests
+
+### Rollout (separate PRs)
+12. Integration test in one service (rasUrlShortener recommended — smallest footprint)
+13. Add to remaining services as needed
