@@ -14,9 +14,10 @@ rasformat.MaskFullName("John", "Smith")     // "J*** S***"
 rasformat.MaskDOB("1990-05-15")             // "****-**-15"
 rasformat.MaskWords("John Smith", 1, '*')   // "J*** S****"
 rasformat.MaskWords("Secret Data", 2, '#')  // "Se#### Da##"
+rasformat.MaskWordsFixed("John Smith", 1, '*', 3)  // "J*** S***"
 ```
 
-`MaskWords` masks each word individually, showing only the first N characters and replacing the rest with the specified mask character. Handles unicode and multiple spaces.
+`MaskWords` masks each word individually, showing only the first N characters and replacing the rest with the specified mask character. `MaskWordsFixed` uses a fixed mask length regardless of word length. Both handle unicode and multiple spaces.
 
 ## Phone Formatting
 

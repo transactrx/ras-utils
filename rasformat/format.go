@@ -119,12 +119,37 @@ func MaskFullName(firstName, lastName string) string {
 
 // MaskWords masks each word in a string, showing only the first visibleChars
 // characters of each word and replacing the rest with the mask character.
-// Words are separated by whitespace. Returns "****" if value is empty.
+// Words are separated by whitespace. Returns mask repeated 4 times if value is empty.
 func MaskWords(value string, visibleChars int, mask rune) string {
+	return maskWordsCore(value, visibleChars, mask, 0)
+}
+
+// MaskWordsFixed masks each word in a string with a fixed-length mask.
+// Shows the first visibleChars characters of each word, then appends exactly
+// maskLength mask characters regardless of word length.
+// Returns mask repeated maskLength times if value is empty.
+func MaskWordsFixed(value string, visibleChars int, mask rune, maskLength int) string {
+	return maskWordsCore(value, visibleChars, mask, maskLength)
+}
+
+// maskWordsCore is the shared implementation for MaskWords and MaskWordsFixed.
+// fixedLen <= 0 means use remaining word length; fixedLen > 0 uses that fixed length.
+func maskWordsCore(value string, visibleChars int, mask rune, fixedLen int) string {
 	value = strings.TrimSpace(value)
-	if value == "" {
-		return string([]rune{mask, mask, mask, mask})
+
+	emptyMaskLen := 4
+	if fixedLen > 0 {
+		emptyMaskLen = fixedLen
 	}
+
+	if value == "" {
+		var sb strings.Builder
+		for i := 0; i < emptyMaskLen; i++ {
+			sb.WriteRune(mask)
+		}
+		return sb.String()
+	}
+
 	if visibleChars < 0 {
 		visibleChars = 0
 	}
@@ -138,9 +163,15 @@ func MaskWords(value string, visibleChars int, mask rune) string {
 			masked[i] = word
 			continue
 		}
+
+		maskLen := len(runes) - visibleChars
+		if fixedLen > 0 {
+			maskLen = fixedLen
+		}
+
 		var sb strings.Builder
 		sb.WriteString(string(runes[:visibleChars]))
-		for range runes[visibleChars:] {
+		for j := 0; j < maskLen; j++ {
 			sb.WriteRune(mask)
 		}
 		masked[i] = sb.String()
