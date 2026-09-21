@@ -712,22 +712,45 @@ if err := pool.Shutdown(ctx); err != nil {
 }
 ```
 
+**With parent context (jobs cancel when parent cancels):**
+
+```go
+pool := rasworker.NewPool(10, 100, rasworker.WithContext(appCtx))
+pool.Start()
+
+// Jobs receive a context derived from appCtx
+pool.Submit(func(ctx context.Context) error {
+    select {
+    case <-ctx.Done():
+        return ctx.Err()
+    default:
+        // do work
+        return nil
+    }
+})
+```
+
 **Error handling:**
 
 ```go
 // Create pool with error handler
-pool := rasworker.NewPoolWithErrorHandler(10, 100, func(err error) {
-    log.Printf("Job failed: %v", err)
-    metrics.IncrCounter("worker_errors")
-})
+pool := rasworker.NewPool(10, 100,
+    rasworker.WithErrorHandler(func(err error) {
+        log.Printf("Job failed: %v", err)
+    }),
+)
+
+// Combine options
+pool := rasworker.NewPool(10, 100,
+    rasworker.WithContext(appCtx),
+    rasworker.WithErrorHandler(logError),
+    rasworker.WithErrorHandler(metrics.RecordError),
+)
 
 // Or add handlers after creation (thread-safe, can be called after Start)
 pool := rasworker.NewPool(10, 100)
 pool.AddErrorHandler(func(err error) {
     slog.Error("job error", "error", err)
-})
-pool.AddErrorHandler(func(err error) {
-    alerting.Notify(err)
 })
 pool.Start()
 ```

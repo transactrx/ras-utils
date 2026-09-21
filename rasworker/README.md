@@ -8,6 +8,7 @@ Generic worker pool with configurable concurrency and graceful shutdown.
 - Channel-based job queue
 - Graceful shutdown with queue draining
 - Context cancellation support
+- Configurable error handling
 
 ## Installation
 
@@ -22,13 +23,12 @@ import "github.com/transactrx/ras-utils/rasworker"
 ```go
 // Create pool with 10 workers and queue size of 100
 pool := rasworker.NewPool(10, 100)
-
-// Start the workers
 pool.Start()
 
-// Submit work
-pool.Submit(func() {
+// Submit work (jobs receive a context for cancellation)
+pool.Submit(func(ctx context.Context) error {
     // do work
+    return nil
 })
 
 // Graceful shutdown (waits for queued work to complete)
@@ -37,45 +37,73 @@ defer cancel()
 pool.Shutdown(ctx)
 ```
 
-### With Context Cancellation
+### With Parent Context
+
+Jobs automatically cancel when the parent context is cancelled:
 
 ```go
-ctx, cancel := context.WithCancel(context.Background())
-pool := rasworker.NewPoolWithContext(ctx, 5, 50)
+appCtx, appCancel := context.WithCancel(context.Background())
+
+pool := rasworker.NewPool(5, 50, rasworker.WithContext(appCtx))
 pool.Start()
 
-// Submit work that respects context
-pool.Submit(func() {
+pool.Submit(func(ctx context.Context) error {
     select {
     case <-ctx.Done():
-        return  // cancelled
+        return ctx.Err() // cancelled
     default:
         // do work
+        return nil
     }
 })
 
-// Cancel all work
-cancel()
+// Cancelling appCtx stops all jobs
+appCancel()
+```
+
+### With Error Handler
+
+```go
+pool := rasworker.NewPool(10, 100,
+    rasworker.WithErrorHandler(func(err error) {
+        slog.Error("job failed", "error", err)
+    }),
+)
+pool.Start()
+
+pool.Submit(func(ctx context.Context) error {
+    return errors.New("something went wrong") // triggers error handler
+})
+```
+
+### Combined Options
+
+```go
+pool := rasworker.NewPool(10, 100,
+    rasworker.WithContext(appCtx),
+    rasworker.WithErrorHandler(logError),
+    rasworker.WithErrorHandler(metrics.RecordError), // multiple handlers OK
+)
+```
+
+### Adding Error Handlers After Start
+
+```go
+pool := rasworker.NewPool(10, 100)
+pool.Start()
+
+// Safe to add handlers while running
+pool.AddErrorHandler(func(err error) {
+    slog.Warn("job error", "error", err)
+})
 ```
 
 ### Non-blocking Submit
 
 ```go
-// Returns false if queue is full
-if !pool.TrySubmit(func() { /* work */ }) {
+// Returns false if queue is full (job is dropped)
+if !pool.Submit(func(ctx context.Context) error { return nil }) {
     log.Println("queue full, work dropped")
-}
-```
-
-### Monitoring
-
-```go
-// Current queue depth
-pending := pool.QueueSize()
-
-// Check if pool is running
-if pool.IsRunning() {
-    // ...
 }
 ```
 
@@ -84,17 +112,22 @@ if pool.IsRunning() {
 ### Types
 
 - `Pool` - Worker pool manager
+- `Job` - `func(ctx context.Context) error`
+- `ErrorHandler` - `func(err error)`
+- `PoolOption` - Functional option for configuration
 
 ### Constructors
 
-- `NewPool(workers, queueSize int) *Pool` - Create pool
-- `NewPoolWithContext(ctx context.Context, workers, queueSize int) *Pool` - Create pool with context
+- `NewPool(workers, queueSize int, opts ...PoolOption) *Pool` - Create pool with options
+
+### Options
+
+- `WithContext(ctx context.Context)` - Set parent context for cancellation propagation
+- `WithErrorHandler(fn ErrorHandler)` - Add error handler (can specify multiple)
 
 ### Methods
 
 - `Start()` - Start worker goroutines
-- `Submit(fn func())` - Queue work (blocks if queue full)
-- `TrySubmit(fn func()) bool` - Queue work (returns false if queue full)
-- `Shutdown(ctx context.Context) error` - Graceful shutdown
-- `QueueSize() int` - Current pending work count
-- `IsRunning() bool` - Check if pool is active
+- `Submit(job Job) bool` - Queue work, returns false if queue full
+- `AddErrorHandler(fn ErrorHandler)` - Add error handler (safe to call after Start)
+- `Shutdown(ctx context.Context) error` - Graceful shutdown; returns context error if timeout exceeded
