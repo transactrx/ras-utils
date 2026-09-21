@@ -25,31 +25,65 @@ type Pool struct {
 	handlerMu     sync.RWMutex
 }
 
+// poolConfig holds optional configuration for pool construction.
+type poolConfig struct {
+	ctx           context.Context
+	errorHandlers []ErrorHandler
+}
+
+// PoolOption configures a Pool during construction.
+type PoolOption func(*poolConfig)
+
+// WithContext sets a parent context for the pool. Jobs receive a derived context
+// that cancels when the parent cancels or when [Pool.Shutdown] is called.
+// If not specified, [context.Background] is used.
+func WithContext(ctx context.Context) PoolOption {
+	return func(c *poolConfig) {
+		c.ctx = ctx
+	}
+}
+
+// WithErrorHandler adds an error handler that is called when a job returns an error.
+// Can be specified multiple times to add multiple handlers.
+func WithErrorHandler(onError ErrorHandler) PoolOption {
+	return func(c *poolConfig) {
+		if onError != nil {
+			c.errorHandlers = append(c.errorHandlers, onError)
+		}
+	}
+}
+
 // NewPool creates a new worker pool with the specified number of workers and job queue size.
 // Call [Pool.Start] to begin processing jobs.
-func NewPool(workers, queueSize int) *Pool {
-	ctx, cancel := context.WithCancel(context.Background())
+func NewPool(workers, queueSize int, opts ...PoolOption) *Pool {
+	cfg := &poolConfig{
+		ctx:           nil,
+		errorHandlers: make([]ErrorHandler, 0),
+	}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	if cfg.ctx == nil {
+		cfg.ctx = context.Background()
+	}
+
+	ctx, cancel := context.WithCancel(cfg.ctx)
 	return &Pool{
 		jobs:          make(chan Job, queueSize),
 		ctx:           ctx,
 		cancel:        cancel,
 		workers:       workers,
-		errorHandlers: make([]ErrorHandler, 0),
+		errorHandlers: cfg.errorHandlers,
 	}
 }
 
 // NewPoolWithErrorHandler creates a new worker pool with an initial error handler.
 // Additional handlers can be added with [Pool.AddErrorHandler].
+//
+// Deprecated: Use [NewPool] with [WithErrorHandler] instead.
 func NewPoolWithErrorHandler(workers, queueSize int, onError ErrorHandler) *Pool {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	return &Pool{
-		jobs:          make(chan Job, queueSize),
-		ctx:           ctx,
-		cancel:        cancel,
-		workers:       workers,
-		errorHandlers: []ErrorHandler{onError},
-	}
+	return NewPool(workers, queueSize, WithErrorHandler(onError))
 }
 
 // AddErrorHandler adds an error handler that is called when a job returns an error.

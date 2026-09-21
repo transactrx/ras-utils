@@ -341,3 +341,67 @@ func TestPool_AddErrorHandler_Concurrent(t *testing.T) {
 		t.Errorf("expected %d handlers called, got %d", handlersAdded.Load(), errorsHandled.Load())
 	}
 }
+
+func TestPool_WithContext_ParentCancellation(t *testing.T) {
+	parentCtx, parentCancel := context.WithCancel(context.Background())
+	p := NewPool(2, 10, WithContext(parentCtx))
+	p.Start()
+
+	jobStarted := make(chan struct{})
+	jobCtxCancelled := make(chan struct{})
+
+	p.Submit(func(ctx context.Context) error {
+		close(jobStarted)
+		<-ctx.Done()
+		close(jobCtxCancelled)
+		return nil
+	})
+
+	select {
+	case <-jobStarted:
+	case <-time.After(time.Second):
+		t.Fatal("job did not start")
+	}
+
+	parentCancel()
+
+	select {
+	case <-jobCtxCancelled:
+	case <-time.After(time.Second):
+		t.Fatal("job context was not cancelled when parent was cancelled")
+	}
+
+	p.Shutdown(context.Background())
+}
+
+func TestPool_WithContext_AndErrorHandler(t *testing.T) {
+	var errorSeen atomic.Bool
+	ctx := context.Background()
+
+	p := NewPool(1, 10,
+		WithContext(ctx),
+		WithErrorHandler(func(err error) {
+			errorSeen.Store(true)
+		}),
+	)
+	p.Start()
+
+	done := make(chan struct{})
+	p.Submit(func(ctx context.Context) error {
+		defer close(done)
+		return errors.New("test error")
+	})
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("job did not complete")
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	if !errorSeen.Load() {
+		t.Error("error handler was not called")
+	}
+
+	p.Shutdown(context.Background())
+}
