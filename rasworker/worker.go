@@ -140,6 +140,17 @@ func (p *Pool) Submit(job Job) bool {
 	}
 }
 
+// SubmitWait adds a job to the queue, blocking until the job is queued or the context is cancelled.
+// Unlike [Pool.Submit], this method will not drop jobs when the queue is full.
+func (p *Pool) SubmitWait(ctx context.Context, job Job) error {
+	select {
+	case p.jobs <- job:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // Shutdown gracefully stops the worker pool, waiting for queued jobs to complete.
 // If the context is cancelled before all jobs finish, in-flight jobs are cancelled
 // and the function returns the context error.

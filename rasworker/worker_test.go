@@ -405,3 +405,107 @@ func TestPool_WithContext_AndErrorHandler(t *testing.T) {
 
 	p.Shutdown(context.Background())
 }
+
+func TestPool_SubmitWait_ExecutesJob(t *testing.T) {
+	p := NewPool(2, 10)
+	p.Start()
+	defer p.Shutdown(context.Background())
+
+	var executed atomic.Bool
+	done := make(chan struct{})
+
+	err := p.SubmitWait(context.Background(), func(ctx context.Context) error {
+		executed.Store(true)
+		close(done)
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("SubmitWait returned error: %v", err)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("job not executed within timeout")
+	}
+
+	if !executed.Load() {
+		t.Error("job was not executed")
+	}
+}
+
+func TestPool_SubmitWait_BlocksWhenFull(t *testing.T) {
+	// Queue size 0 means jobs go directly to workers with no buffering
+	p := NewPool(1, 0)
+	p.Start()
+	defer p.Shutdown(context.Background())
+
+	blocker := make(chan struct{})
+	started := make(chan struct{})
+
+	// This job blocks the only worker
+	p.SubmitWait(context.Background(), func(ctx context.Context) error {
+		close(started)
+		<-blocker
+		return nil
+	})
+
+	// Wait for blocker job to start
+	<-started
+
+	// SubmitWait should block because worker is busy and queue is full (size 0)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	err := p.SubmitWait(ctx, func(ctx context.Context) error {
+		return nil
+	})
+
+	if err != context.DeadlineExceeded {
+		t.Errorf("expected DeadlineExceeded when queue full, got %v", err)
+	}
+
+	close(blocker)
+}
+
+func TestPool_SubmitWait_SucceedsAfterSlotFrees(t *testing.T) {
+	p := NewPool(1, 0)
+	p.Start()
+	defer p.Shutdown(context.Background())
+
+	release := make(chan struct{})
+	started := make(chan struct{})
+
+	// Block the worker
+	p.SubmitWait(context.Background(), func(ctx context.Context) error {
+		close(started)
+		<-release
+		return nil
+	})
+
+	<-started
+
+	var submitted atomic.Bool
+
+	// Release the blocker after a short delay
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		close(release)
+	}()
+
+	// This should block until release, then succeed
+	err := p.SubmitWait(context.Background(), func(ctx context.Context) error {
+		submitted.Store(true)
+		return nil
+	})
+
+	if err != nil {
+		t.Errorf("SubmitWait returned error: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	if !submitted.Load() {
+		t.Error("job was not submitted after slot freed")
+	}
+}
