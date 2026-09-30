@@ -16,8 +16,11 @@ type Semaphore struct {
 }
 
 // NewSemaphore creates a new [Semaphore] with the specified concurrency limit.
-// The limit must be positive; a limit of zero creates a semaphore that blocks all acquires.
+// Panics if limit is less than 1.
 func NewSemaphore(limit int) *Semaphore {
+	if limit < 1 {
+		panic("rasworker: semaphore limit must be at least 1")
+	}
 	return &Semaphore{
 		sem: make(chan struct{}, limit),
 	}

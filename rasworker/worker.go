@@ -4,6 +4,7 @@ package rasworker
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 )
@@ -20,6 +21,8 @@ type Pool struct {
 	wg            sync.WaitGroup
 	ctx           context.Context
 	cancel        context.CancelFunc
+	closed        chan struct{} // closed when Shutdown starts, unblocks SubmitWait
+	closeOnce     sync.Once
 	workers       int
 	errorHandlers []ErrorHandler
 	handlerMu     sync.RWMutex
@@ -73,6 +76,7 @@ func NewPool(workers, queueSize int, opts ...PoolOption) *Pool {
 		jobs:          make(chan Job, queueSize),
 		ctx:           ctx,
 		cancel:        cancel,
+		closed:        make(chan struct{}),
 		workers:       workers,
 		errorHandlers: cfg.errorHandlers,
 	}
@@ -140,14 +144,25 @@ func (p *Pool) Submit(job Job) bool {
 	}
 }
 
+// ErrPoolShutdown is returned by [Pool.SubmitWait] when the pool is shutting down.
+var ErrPoolShutdown = errors.New("worker pool is shutting down")
+
 // SubmitWait adds a job to the queue, blocking until the job is queued or the context is cancelled.
 // Unlike [Pool.Submit], this method will not drop jobs when the queue is full.
-func (p *Pool) SubmitWait(ctx context.Context, job Job) error {
+// Returns [ErrPoolShutdown] if the pool is shutting down.
+func (p *Pool) SubmitWait(ctx context.Context, job Job) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = ErrPoolShutdown
+		}
+	}()
 	select {
 	case p.jobs <- job:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	case <-p.closed:
+		return ErrPoolShutdown
 	}
 }
 
@@ -155,6 +170,8 @@ func (p *Pool) SubmitWait(ctx context.Context, job Job) error {
 // If the context is cancelled before all jobs finish, in-flight jobs are cancelled
 // and the function returns the context error.
 func (p *Pool) Shutdown(ctx context.Context) error {
+	// Signal shutdown to unblock waiting SubmitWait calls.
+	p.closeOnce.Do(func() { close(p.closed) })
 	close(p.jobs)
 
 	done := make(chan struct{})

@@ -509,3 +509,19 @@ func TestPool_SubmitWait_SucceedsAfterSlotFrees(t *testing.T) {
 		t.Error("job was not submitted after slot freed")
 	}
 }
+
+func TestPool_SubmitWait_ReturnsErrorAfterShutdown(t *testing.T) {
+	p := NewPool(1, 10)
+	p.Start()
+
+	// Shutdown the pool
+	p.Shutdown(context.Background())
+
+	// SubmitWait after shutdown should return ErrPoolShutdown immediately
+	err := p.SubmitWait(context.Background(), func(ctx context.Context) error {
+		return nil
+	})
+	if err != ErrPoolShutdown {
+		t.Errorf("expected ErrPoolShutdown, got %v", err)
+	}
+}

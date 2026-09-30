@@ -154,3 +154,21 @@ func TestSemaphore_TryRelease(t *testing.T) {
 		t.Error("third TryRelease should fail")
 	}
 }
+
+func TestNewSemaphore_PanicsOnZeroLimit(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for zero limit")
+		}
+	}()
+	NewSemaphore(0)
+}
+
+func TestNewSemaphore_PanicsOnNegativeLimit(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for negative limit")
+		}
+	}()
+	NewSemaphore(-1)
+}
