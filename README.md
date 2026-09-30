@@ -705,6 +705,7 @@ ok := pool.Submit(func(ctx context.Context) error {
 })
 
 // SubmitWait blocks until queued (never drops)
+// Returns ErrPoolShutdown if pool is shutting down
 err := pool.SubmitWait(ctx, func(ctx context.Context) error {
     return doWork()
 })
@@ -731,7 +732,7 @@ pool := rasworker.NewPool(10, 100,
 Limits concurrent access to a resource. Use it to bound goroutines or rate-limit external API calls.
 
 ```go
-// Limit to 10 concurrent operations
+// Limit to 10 concurrent operations (panics if limit < 1)
 sem := rasworker.NewSemaphore(10)
 
 sem.Acquire()        // blocks until slot available

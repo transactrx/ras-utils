@@ -42,12 +42,14 @@ pool.Shutdown(ctx)
 Use `SubmitWait` to block until the job is queued instead of dropping:
 
 ```go
-// Blocks until job is queued or context cancelled
+// Blocks until job is queued, context cancelled, or pool shuts down
 err := pool.SubmitWait(ctx, func(ctx context.Context) error {
     return doWork()
 })
-if err != nil {
-    // context was cancelled before job could be queued
+if errors.Is(err, rasworker.ErrPoolShutdown) {
+    // pool is shutting down
+} else if err != nil {
+    // context was cancelled
 }
 ```
 
@@ -182,7 +184,7 @@ func CallExternalAPI(ctx context.Context, req Request) (*Response, error) {
 |--------|-------------|
 | `Start()` | Start worker goroutines |
 | `Submit(job Job) bool` | Queue work; returns false if queue full (job dropped) |
-| `SubmitWait(ctx context.Context, job Job) error` | Queue work; blocks until queued or context cancelled |
+| `SubmitWait(ctx context.Context, job Job) error` | Queue work; blocks until queued, context cancelled, or pool shutdown (`ErrPoolShutdown`) |
 | `AddErrorHandler(fn ErrorHandler)` | Add error handler (safe to call after Start) |
 | `Shutdown(ctx context.Context) error` | Graceful shutdown; returns context error if timeout exceeded |
 
@@ -190,7 +192,7 @@ func CallExternalAPI(ctx context.Context, req Request) (*Response, error) {
 
 | Function | Description |
 |----------|-------------|
-| `NewSemaphore(limit int) *Semaphore` | Create semaphore with concurrency limit |
+| `NewSemaphore(limit int) *Semaphore` | Create semaphore with concurrency limit; panics if limit < 1 |
 
 | Method | Description |
 |--------|-------------|
@@ -207,4 +209,6 @@ func CallExternalAPI(ctx context.Context, req Request) (*Response, error) {
 ```go
 type Job func(ctx context.Context) error
 type ErrorHandler func(err error)
+
+var ErrPoolShutdown = errors.New("worker pool is shutting down")
 ```
