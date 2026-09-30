@@ -34,7 +34,7 @@ This library uses semantic versioning (`vX.Y.Z`). Tags are automatically created
 | [rasstack](#rasstack) | Middleware composition | [README](rasstack/README.md) |
 | [rastime](#rastime) | TimeOfDay, DateRange, and schedule types | [README](rastime/README.md) |
 | [rasvalidation](#rasvalidation) | UUID, email, phone, NPI validators | [README](rasvalidation/README.md) |
-| [rasworker](#rasworker) | Worker pool with graceful shutdown | [README](rasworker/README.md) |
+| [rasworker](#rasworker) | Worker pool and semaphore for concurrency control | [README](rasworker/README.md) |
 
 ## rascache
 
@@ -686,71 +686,86 @@ rasvalidation.IsValidDateString("15-01-2024", "02-01-2006") // custom layout
 
 ## rasworker
 
-Generic worker pool for concurrent job execution with graceful shutdown and error handling.
+Worker pool and semaphore for concurrency control with graceful shutdown.
 
 ```go
 import "github.com/transactrx/ras-utils/rasworker"
+```
 
+### Worker Pool
+
+```go
 // Create pool with 10 workers and queue size of 100
 pool := rasworker.NewPool(10, 100)
 pool.Start()
 
-// Submit jobs (returns false if queue is full)
+// Submit jobs (returns false if queue is full, job dropped)
 ok := pool.Submit(func(ctx context.Context) error {
-    // do work
-    return nil
+    return doWork()
+})
+
+// SubmitWait blocks until queued (never drops)
+// Returns ErrPoolShutdown if pool is shutting down
+err := pool.SubmitWait(ctx, func(ctx context.Context) error {
+    return doWork()
 })
 
 // Graceful shutdown - drains queue before returning
-err := pool.Shutdown(context.Background())
-
-// Shutdown with timeout - cancels in-flight jobs if deadline exceeded
 ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 defer cancel()
-if err := pool.Shutdown(ctx); err != nil {
-    log.Printf("Shutdown timeout: %v", err)
-}
+pool.Shutdown(ctx)
 ```
 
-**With parent context (jobs cancel when parent cancels):**
+**With options:**
 
 ```go
-pool := rasworker.NewPool(10, 100, rasworker.WithContext(appCtx))
-pool.Start()
-
-// Jobs receive a context derived from appCtx
-pool.Submit(func(ctx context.Context) error {
-    select {
-    case <-ctx.Done():
-        return ctx.Err()
-    default:
-        // do work
-        return nil
-    }
-})
-```
-
-**Error handling:**
-
-```go
-// Create pool with error handler
 pool := rasworker.NewPool(10, 100,
-    rasworker.WithErrorHandler(func(err error) {
-        log.Printf("Job failed: %v", err)
+    rasworker.WithContext(appCtx),                    // jobs cancel when parent cancels
+    rasworker.WithErrorHandler(func(err error) {     // handle job errors
+        slog.Error("job failed", "error", err)
     }),
 )
+```
 
-// Combine options
-pool := rasworker.NewPool(10, 100,
-    rasworker.WithContext(appCtx),
-    rasworker.WithErrorHandler(logError),
-    rasworker.WithErrorHandler(metrics.RecordError),
-)
+### Semaphore
 
-// Or add handlers after creation (thread-safe, can be called after Start)
-pool := rasworker.NewPool(10, 100)
-pool.AddErrorHandler(func(err error) {
-    slog.Error("job error", "error", err)
-})
-pool.Start()
+Limits concurrent access to a resource. Use it to bound goroutines or rate-limit external API calls.
+
+```go
+// Limit to 10 concurrent operations (panics if limit < 1)
+sem := rasworker.NewSemaphore(10)
+
+sem.Acquire()        // blocks until slot available
+defer sem.Release()  // always release with defer
+doWork()
+```
+
+**Non-blocking and context-aware variants:**
+
+```go
+// Non-blocking acquire
+if sem.TryAcquire() {
+    defer sem.Release()
+    doWork()
+}
+
+// With timeout
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+if err := sem.AcquireContext(ctx); err != nil {
+    return err // timed out
+}
+defer sem.Release()
+```
+
+**Bounding external API calls:**
+
+```go
+var apiSem = rasworker.NewSemaphore(10)
+
+func CallExternalAPI(ctx context.Context, req Request) (*Response, error) {
+    apiSem.Acquire()
+    defer apiSem.Release()
+    return httpClient.Do(ctx, req)
+}
 ```
