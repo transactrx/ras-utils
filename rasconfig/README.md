@@ -29,6 +29,25 @@ timeout := rasconfig.GetEnvironmentVariableOrDefaultDuration("DB_TIMEOUT", "30s"
 apiKey := rasconfig.GetEnvironmentVariableOrPanic("API_KEY", "API_KEY is required")
 ```
 
+### Type-Safe Generic Environment Variables
+
+For type-safe parsing of environment variables to any primitive type:
+
+```go
+// With default - returns default if not set or empty, error if parse fails
+enabled, err := rasconfig.TryGetEnvironmentVariableOrDefault("FEATURE_ENABLED", false)
+maxRetries, err := rasconfig.TryGetEnvironmentVariableOrDefault[int16]("MAX_RETRIES", 3)
+threshold, err := rasconfig.TryGetEnvironmentVariableOrDefault("THRESHOLD", 0.95)
+
+// Without default - returns ErrEnvNotFound if not set or empty
+port, err := rasconfig.TryGetEnvironmentVariable[uint16]("PORT")
+if errors.Is(err, rasconfig.ErrEnvNotFound) {
+    // handle missing env var
+}
+```
+
+Supported types: `bool`, `string`, `int`, `int8`, `int16`, `int32`, `int64`, `uint`, `uint8`, `uint16`, `uint32`, `uint64`, `float32`, `float64`.
+
 ### PostgreSQL Connection Pool
 
 ```go
@@ -85,10 +104,19 @@ defer db.Close()
 
 ### Functions
 
+**Environment Variables:**
 - `GetEnvironmentVariableOrDefault(key, defaultValue string) string`
 - `GetEnvironmentVariableOrDefaultInt(key string, defaultValue int) int`
 - `GetEnvironmentVariableOrDefaultDuration(key, defaultValue string) time.Duration`
 - `GetEnvironmentVariableOrPanic(key, panicMessage string) string`
+- `TryGetEnvironmentVariable[T primitive](key string) (T, error)` - returns `ErrEnvNotFound` if missing
+- `TryGetEnvironmentVariableOrDefault[T primitive](key string, defaultValue T) (T, error)` - returns default if missing, error if parse fails
+
+**Database Pools:**
 - `InitDbPool(ctx context.Context, cfg *DBConfig) (*pgxpool.Pool, error)`
 - `InitReadOnlyDbPool(ctx context.Context, cfg *DBConfig) (*pgxpool.Pool, error)`
 - `NewSnowflakePool(ctx context.Context, cfg *SnowflakeDBConfig) (*sql.DB, error)`
+
+### Errors
+
+- `ErrEnvNotFound` - returned by `TryGetEnvironmentVariable` when the environment variable is not set or empty

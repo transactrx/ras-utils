@@ -35,7 +35,8 @@ rasformat ← rasvalidation (deprecated wrappers)
 | Cache with TTL | `rascache` | `NewCache`, `GetOrStore` |
 | DB connection pool | `rasconfig` | `InitDbPool`, `InitReadOnlyDbPool` |
 | Snowflake connection | `rasconfig` | `NewSnowflakePool` |
-| Env var with default | `rasconfig` | `GetEnvironmentVariableOrDefault` |
+| Env var with default | `rasconfig` | `GetEnvironmentVariableOrDefault`, `TryGetEnvironmentVariableOrDefault[T]` |
+| Env var type-safe | `rasconfig` | `TryGetEnvironmentVariable[T]` |
 | Nullable → pgtype | `rasconversion` | `ConvertToPgtype*` |
 | pgtype → Go | `rasconversion` | `ConvertFromPgtype*` |
 | Publish NATS event | `rasevents` | `SendEvent`, `SendEventAsync` |
